@@ -3,173 +3,257 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import '../models/concern.dart';
 import '../models/comment.dart';
+import '../models/audit_trail.dart';
 import '../services/concern_service.dart';
+import '../services/providers.dart';
 import 'package:intl/intl.dart';
 
-<<<<<<< HEAD
-=======
-
->>>>>>> c3e067d78a3dd4cf7368b66f56c38a2e71ca3da2
 class ConcernDetailScreen extends ConsumerStatefulWidget {
   final Concern concern;
   final bool isAdmin;
 
-<<<<<<< HEAD
-=======
-
->>>>>>> c3e067d78a3dd4cf7368b66f56c38a2e71ca3da2
   const ConcernDetailScreen({
     super.key,
     required this.concern,
     this.isAdmin = false,
   });
 
-<<<<<<< HEAD
-=======
-
->>>>>>> c3e067d78a3dd4cf7368b66f56c38a2e71ca3da2
   @override
   ConsumerState<ConcernDetailScreen> createState() => _ConcernDetailScreenState();
 }
 
-<<<<<<< HEAD
 class _ConcernDetailScreenState extends ConsumerState<ConcernDetailScreen> {
   final _commentController = TextEditingController();
+  bool _isInternalNote = false; // NEW: Toggle for private admin notes
 
-=======
+  @override
+  void initState() {
+    super.initState();
+    // AUTOMATIC READ: If admin opens a new/routed concern, mark it as READ
+    if (widget.isAdmin && 
+       (widget.concern.status == ConcernStatus.submitted || widget.concern.status == ConcernStatus.routed)) {
+      Future.microtask(() => _updateStatus(ConcernStatus.read));
+    }
+  }
 
-class _ConcernDetailScreenState extends ConsumerState<ConcernDetailScreen> {
-  final _commentController = TextEditingController();
-
-
->>>>>>> c3e067d78a3dd4cf7368b66f56c38a2e71ca3da2
   @override
   void dispose() {
     _commentController.dispose();
     super.dispose();
   }
 
-<<<<<<< HEAD
   void _sendComment() async {
     if (_commentController.text.trim().isEmpty) return;
 
-=======
-
-  void _sendComment() async {
-    if (_commentController.text.trim().isEmpty) return;
-
-
->>>>>>> c3e067d78a3dd4cf7368b66f56c38a2e71ca3da2
+    final userId = ref.read(userIdProvider) ?? (widget.isAdmin ? 'admin_id' : widget.concern.studentId);
+    
     final comment = Comment(
       id: const Uuid().v4(),
       concernId: widget.concern.id,
-      senderId: widget.isAdmin ? 'admin_id' : widget.concern.studentId,
+      senderId: userId,
       senderName: widget.isAdmin ? 'Admin/Staff' : (widget.concern.isAnonymous ? 'Anonymous Student' : widget.concern.studentName),
       message: _commentController.text.trim(),
       timestamp: DateTime.now(),
+      isInternal: widget.isAdmin ? _isInternalNote : false,
     );
 
-<<<<<<< HEAD
-=======
-
->>>>>>> c3e067d78a3dd4cf7368b66f56c38a2e71ca3da2
     await ref.read(concernServiceProvider).addComment(comment);
+    
+    // AUTOMATIC SCREENED: If admin replies publicly, change status to SCREENED
+    if (widget.isAdmin && !_isInternalNote && widget.concern.status == ConcernStatus.read) {
+      _updateStatus(ConcernStatus.screened);
+    }
+
     _commentController.clear();
+    setState(() => _isInternalNote = false);
   }
 
-<<<<<<< HEAD
   void _updateStatus(ConcernStatus status) async {
-    await ref.read(concernServiceProvider).updateStatus(widget.concern.id, status, 'admin_user');
+    final userId = ref.read(userIdProvider) ?? 'admin_user';
+    await ref.read(concernServiceProvider).updateStatus(widget.concern.id, status, userId);
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Status updated to ${status.name.toUpperCase()}')),
       );
     }
   }
-=======
->>>>>>> c3e067d78a3dd4cf7368b66f56c38a2e71ca3da2
 
   @override
   Widget build(BuildContext context) {
     final commentsStream = ref.watch(concernServiceProvider).getComments(widget.concern.id);
+    final auditStream = ref.watch(concernServiceProvider).getAuditTrail(widget.concern.id);
+    final currentUserId = ref.watch(userIdProvider);
 
-<<<<<<< HEAD
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.concern.id.substring(0, 8).toUpperCase()),
-=======
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(widget.concern.title),
+          backgroundColor: Colors.red,
+          foregroundColor: Colors.white,
+          bottom: const TabBar(
+            tabs: [
+              Tab(icon: Icon(Icons.chat), text: 'Messages'),
+              Tab(icon: Icon(Icons.history), text: 'Audit Trail'),
+            ],
+            indicatorColor: Colors.white,
+            labelColor: Colors.white,
+            unselectedLabelColor: Colors.white70,
+          ),
+        ),
+        body: TabBarView(
+          children: [
+            Column(
+              children: [
+                _buildStatusTracker(),
+                _buildConcernHeader(),
+                Expanded(
+                  child: StreamBuilder<List<Comment>>(
+                    stream: commentsStream,
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const Center(child: CircularProgressIndicator(color: Colors.red));
+                      }
+                      var comments = snapshot.data ?? [];
+                      
+                      // SECURITY: Hide internal notes from students
+                      if (!widget.isAdmin) {
+                        comments = comments.where((c) => !c.isInternal).toList();
+                      }
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.concern.title),
->>>>>>> c3e067d78a3dd4cf7368b66f56c38a2e71ca3da2
-        backgroundColor: Colors.red,
-        foregroundColor: Colors.white,
-      ),
-      body: Column(
-        children: [
-<<<<<<< HEAD
-          // Basic Info Header
-          _buildConcernHeader(),
-          
-          // Chat Area
-=======
->>>>>>> c3e067d78a3dd4cf7368b66f56c38a2e71ca3da2
-          Expanded(
-            child: StreamBuilder<List<Comment>>(
-              stream: commentsStream,
+                      if (comments.isEmpty) {
+                        return const Center(child: Text('No messages yet.', style: TextStyle(color: Colors.grey)));
+                      }
+                      return ListView.builder(
+                        padding: const EdgeInsets.all(16),
+                        itemCount: comments.length,
+                        itemBuilder: (context, index) {
+                          final comment = comments[index];
+                          final isMe = comment.senderId == currentUserId || 
+                                       (currentUserId == null && comment.senderId == (widget.isAdmin ? 'admin_id' : widget.concern.studentId));
+                          return _buildCommentBubble(comment, isMe);
+                        },
+                      );
+                    },
+                  ),
+                ),
+                if (widget.concern.status != ConcernStatus.resolved) ...[
+                  _buildCommentInput(),
+                  if (widget.isAdmin) _buildAdminStatusActions(),
+                ] else ...[
+                  _buildResolvedSection(),
+                ],
+              ],
+            ),
+            
+            // Tab 2: Audit Trail
+            StreamBuilder<List<AuditLog>>(
+              stream: auditStream,
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator(color: Colors.red));
                 }
-<<<<<<< HEAD
-                final comments = snapshot.data ?? [];
-                if (comments.isEmpty) {
-                  return const Center(child: Text('No messages yet.', style: TextStyle(color: Colors.grey)));
+                final logs = snapshot.data ?? [];
+                if (logs.isEmpty) {
+                  return const Center(child: Text('No audit logs available.', style: TextStyle(color: Colors.grey)));
                 }
                 return ListView.builder(
                   padding: const EdgeInsets.all(16),
-                  itemCount: comments.length,
+                  itemCount: logs.length,
                   itemBuilder: (context, index) {
-                    final comment = comments[index];
-                    final isMe = comment.senderId == (widget.isAdmin ? 'admin_id' : widget.concern.studentId);
-=======
-
-                final comments = snapshot.data ?? [];
-
-                return ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: comments.length + 1,
-                  itemBuilder: (context, index) {
-                    if (index == 0) {
-                      return _buildConcernInfo();
-                    }
-                    final comment = comments[index - 1];
-                    final isMe = comment.senderId == (widget.isAdmin ? 'admin_id' : widget.concern.studentId);
-
->>>>>>> c3e067d78a3dd4cf7368b66f56c38a2e71ca3da2
-                    return _buildCommentBubble(comment, isMe);
+                    final log = logs[index];
+                    return Card(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      child: ListTile(
+                        leading: CircleAvatar(
+                          backgroundColor: _getActionColor(log.action),
+                          child: Icon(_getActionIcon(log.action), color: Colors.white, size: 20),
+                        ),
+                        title: Text(log.action.replaceAll('_', ' ').toUpperCase(), 
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(log.details, style: const TextStyle(fontSize: 12)),
+                            const SizedBox(height: 4),
+                            Text('Actor: ${log.actorId}', style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                          ],
+                        ),
+                        trailing: Text(DateFormat('MMM dd, HH:mm').format(log.timestamp), 
+                          style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                      ),
+                    );
                   },
                 );
               },
             ),
-          ),
-<<<<<<< HEAD
-
-          // Message Input
-          _buildCommentInput(),
-
-          // Admin Status Choices (If Admin)
-          if (widget.isAdmin) _buildAdminStatusActions(),
-=======
-          _buildCommentInput(),
->>>>>>> c3e067d78a3dd4cf7368b66f56c38a2e71ca3da2
-        ],
+          ],
+        ),
       ),
     );
   }
 
-<<<<<<< HEAD
+  Widget _buildStatusTracker() {
+    final statuses = [
+      ConcernStatus.submitted,
+      ConcernStatus.read,
+      ConcernStatus.screened,
+      ConcernStatus.resolved,
+    ];
+
+    int currentIndex = statuses.indexOf(widget.concern.status);
+    if (widget.concern.status == ConcernStatus.routed) currentIndex = 0;
+    if (widget.concern.status == ConcernStatus.escalated) currentIndex = 2;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(bottom: BorderSide(color: Colors.grey[200]!)),
+      ),
+      child: Row(
+        children: List.generate(statuses.length, (index) {
+          bool isCompleted = index <= currentIndex;
+          bool isLast = index == statuses.length - 1;
+          Color color = isCompleted ? Colors.red : Colors.grey[300]!;
+
+          return Expanded(
+            child: Row(
+              children: [
+                Column(
+                  children: [
+                    Icon(
+                      isCompleted ? Icons.check_circle : Icons.radio_button_unchecked,
+                      color: color,
+                      size: 20,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      statuses[index].name.toUpperCase(),
+                      style: TextStyle(
+                        fontSize: 8,
+                        fontWeight: isCompleted ? FontWeight.bold : FontWeight.normal,
+                        color: color,
+                      ),
+                    ),
+                  ],
+                ),
+                if (!isLast)
+                  Expanded(
+                    child: Container(
+                      height: 2,
+                      margin: const EdgeInsets.only(bottom: 15),
+                      color: index < currentIndex ? Colors.red : Colors.grey[200],
+                    ),
+                  ),
+              ],
+            ),
+          );
+        }),
+      ),
+    );
+  }
+
   Widget _buildConcernHeader() {
     return Container(
       width: double.infinity,
@@ -181,78 +265,67 @@ class _ConcernDetailScreenState extends ConsumerState<ConcernDetailScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(widget.concern.title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-          const SizedBox(height: 4),
-          Text(widget.concern.description, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, color: Colors.black54)),
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(color: Colors.red[100], borderRadius: BorderRadius.circular(4)),
+                child: Text(widget.concern.category.name.toUpperCase(), 
+                  style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.red)),
+              ),
+              const SizedBox(width: 8),
+              Text('ID: ${widget.concern.id.substring(0, 8).toUpperCase()}', 
+                style: const TextStyle(fontSize: 10, color: Colors.grey, fontWeight: FontWeight.bold)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(widget.concern.description, style: const TextStyle(fontSize: 13, color: Colors.black87)),
         ],
-=======
-
-  Widget _buildConcernInfo() {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 24),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Category: \${widget.concern.category.name.toUpperCase()}', style: const TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            Text(widget.concern.description),
-            const Divider(height: 24),
-            const Text('Interaction History', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.red)),
-          ],
-        ),
->>>>>>> c3e067d78a3dd4cf7368b66f56c38a2e71ca3da2
       ),
     );
   }
 
-<<<<<<< HEAD
-=======
-
->>>>>>> c3e067d78a3dd4cf7368b66f56c38a2e71ca3da2
   Widget _buildCommentBubble(Comment comment, bool isMe) {
+    Color bubbleColor = isMe ? Colors.red : Colors.grey[200]!;
+    Color textColor = isMe ? Colors.white : Colors.black87;
+
+    // Style for INTERNAL NOTES (Yellowish background)
+    if (comment.isInternal) {
+      bubbleColor = Colors.amber.shade100;
+      textColor = Colors.black87;
+    }
+
     return Align(
       alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
         margin: const EdgeInsets.symmetric(vertical: 4),
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-<<<<<<< HEAD
-          color: isMe ? Colors.red : Colors.grey[200],
+          color: bubbleColor,
           borderRadius: BorderRadius.circular(12),
+          border: comment.isInternal ? Border.all(color: Colors.amber.shade300) : null,
         ),
         constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (!isMe)
+            if (comment.isInternal)
+              const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.lock, size: 10, color: Colors.amber),
+                  SizedBox(width: 4),
+                  Text('INTERNAL NOTE', style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.amber)),
+                ],
+              ),
+            if (!isMe && !comment.isInternal)
               Text(comment.senderName, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.black54)),
             const SizedBox(height: 2),
-            Text(comment.message, style: TextStyle(color: isMe ? Colors.white : Colors.black87)),
+            Text(comment.message, style: TextStyle(color: textColor)),
             const SizedBox(height: 4),
             Text(
               DateFormat('HH:mm').format(comment.timestamp),
               style: TextStyle(fontSize: 9, color: isMe ? Colors.white70 : Colors.grey),
-=======
-          color: isMe ? Colors.red.shade100 : Colors.grey.shade200,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.7),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              comment.senderName,
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: isMe ? Colors.red : Colors.black54),
-            ),
-            const SizedBox(height: 4),
-            Text(comment.message),
-            const SizedBox(height: 4),
-            Text(
-              DateFormat('HH:mm').format(comment.timestamp),
-              style: const TextStyle(fontSize: 10, color: Colors.grey),
->>>>>>> c3e067d78a3dd4cf7368b66f56c38a2e71ca3da2
             ),
           ],
         ),
@@ -260,38 +333,85 @@ class _ConcernDetailScreenState extends ConsumerState<ConcernDetailScreen> {
     );
   }
 
-<<<<<<< HEAD
   Widget _buildCommentInput() {
     return Container(
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(color: Colors.white, border: Border(top: BorderSide(color: Colors.grey[200]!))),
-=======
-
-  Widget _buildCommentInput() {
-    return Container(
-      padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 5)],
-      ),
->>>>>>> c3e067d78a3dd4cf7368b66f56c38a2e71ca3da2
-      child: Row(
+      child: Column(
         children: [
-          Expanded(
-            child: TextField(
-              controller: _commentController,
-<<<<<<< HEAD
-              decoration: const InputDecoration(hintText: 'Type your message...', border: InputBorder.none, contentPadding: EdgeInsets.symmetric(horizontal: 16)),
+          if (widget.isAdmin)
+            Row(
+              children: [
+                const SizedBox(width: 12),
+                const Icon(Icons.lock_outline, size: 16, color: Colors.grey),
+                const SizedBox(width: 8),
+                const Text('Private Note', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                Transform.scale(
+                  scale: 0.8,
+                  child: Switch(
+                    value: _isInternalNote,
+                    onChanged: (v) => setState(() => _isInternalNote = v),
+                    activeColor: Colors.amber,
+                  ),
+                ),
+              ],
             ),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _commentController,
+                  decoration: InputDecoration(
+                    hintText: _isInternalNote ? 'Type a private admin note...' : 'Type your message...',
+                    border: InputBorder.none,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                  ),
+                ),
+              ),
+              IconButton(
+                icon: Icon(Icons.send, color: _isInternalNote ? Colors.amber : Colors.red),
+                onPressed: _sendComment
+              ),
+            ],
           ),
-          IconButton(icon: const Icon(Icons.send, color: Colors.red), onPressed: _sendComment),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildResolvedSection() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.green[50],
+        border: Border(top: BorderSide(color: Colors.green[100]!)),
+      ),
+      child: Column(
+        children: [
+          const Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.check_circle, color: Colors.green),
+              SizedBox(width: 8),
+              Text('CONCERN RESOLVED', 
+                style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold, letterSpacing: 1)),
+            ],
+          ),
+          if (!widget.isAdmin) ...[
+            const SizedBox(height: 12),
+            const Text('Not satisfied with the resolution?', style: TextStyle(fontSize: 12, color: Colors.black54)),
+            TextButton(
+              onPressed: () => _updateStatus(ConcernStatus.screened),
+              child: const Text('REOPEN CONCERN', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 12)),
+            ),
+          ],
         ],
       ),
     );
   }
 
   Widget _buildAdminStatusActions() {
-    // Only show relevant status updates for admin
     final statuses = [
       ConcernStatus.read,
       ConcernStatus.screened,
@@ -319,25 +439,33 @@ class _ConcernDetailScreenState extends ConsumerState<ConcernDetailScreen> {
                 ),
               )).toList(),
             ),
-=======
-              decoration: const InputDecoration(
-                hintText: 'Type your message...',
-                border: InputBorder.none,
-                contentPadding: EdgeInsets.symmetric(horizontal: 16),
-              ),
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.send, color: Colors.red),
-            onPressed: _sendComment,
->>>>>>> c3e067d78a3dd4cf7368b66f56c38a2e71ca3da2
           ),
         ],
       ),
     );
   }
-}
-<<<<<<< HEAD
-=======
 
->>>>>>> c3e067d78a3dd4cf7368b66f56c38a2e71ca3da2
+  Color _getActionColor(String action) {
+    switch (action) {
+      case 'SUBMITTED': return Colors.blue;
+      case 'ROUTED': return Colors.purple;
+      case 'STATUS_UPDATE': return Colors.orange;
+      case 'MESSAGE': return Colors.teal;
+      case 'ESCALATION': return Colors.red;
+      case 'DEPARTMENT_UPDATE': return Colors.brown;
+      default: return Colors.grey;
+    }
+  }
+
+  IconData _getActionIcon(String action) {
+    switch (action) {
+      case 'SUBMITTED': return Icons.send;
+      case 'ROUTED': return Icons.alt_route;
+      case 'STATUS_UPDATE': return Icons.update;
+      case 'MESSAGE': return Icons.message;
+      case 'ESCALATION': return Icons.warning;
+      case 'DEPARTMENT_UPDATE': return Icons.business;
+      default: return Icons.history;
+    }
+  }
+}

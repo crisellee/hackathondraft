@@ -4,116 +4,146 @@ import 'package:uuid/uuid.dart';
 import 'package:file_picker/file_picker.dart';
 import '../models/concern.dart';
 import '../services/concern_service.dart';
-<<<<<<< HEAD
 import '../services/providers.dart';
-=======
+import '../services/ai_service.dart';
+import '../services/storage_service.dart';
 import 'student_dashboard.dart';
-import 'login_screen.dart';
-
->>>>>>> c3e067d78a3dd4cf7368b66f56c38a2e71ca3da2
 
 class StudentForm extends ConsumerStatefulWidget {
   const StudentForm({super.key});
 
-<<<<<<< HEAD
-=======
-
->>>>>>> c3e067d78a3dd4cf7368b66f56c38a2e71ca3da2
   @override
   ConsumerState<StudentForm> createState() => _StudentFormState();
 }
 
-<<<<<<< HEAD
-=======
-
->>>>>>> c3e067d78a3dd4cf7368b66f56c38a2e71ca3da2
 class _StudentFormState extends ConsumerState<StudentForm> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
-  final _studentIdController = TextEditingController();
   final _titleController = TextEditingController();
-<<<<<<< HEAD
   final _descController = TextEditingController();
   
   String? _selectedDept;
-  ConcernCategory _category = ConcernCategory.academic;
   bool _isAnonymous = false;
   List<PlatformFile> _files = [];
+  bool _isSubmitting = false;
+
+  // Real-time AI Insight
+  ConcernCategory? _predictedCategory;
+  String? _predictedOffice;
+  bool _isAnalyzingRealtime = false;
 
   final List<String> _departments = ['COA', 'COE', 'CCS', 'CBAE'];
 
   @override
+  void initState() {
+    super.initState();
+    _descController.addListener(_onDescriptionChanged);
+  }
+
+  @override
   void dispose() {
+    _descController.removeListener(_onDescriptionChanged);
     _nameController.dispose();
-    _studentIdController.dispose();
     _titleController.dispose();
     _descController.dispose();
     super.dispose();
   }
 
-  void _pickFiles() async {
-=======
-  final _descriptionController = TextEditingController();
-
-
-  String? _selectedDepartment;
-  ConcernCategory _selectedCategory = ConcernCategory.academic;
-  bool _isAnonymous = false;
-  String _program = 'Computer Science';
-  List<PlatformFile> _files = [];
-  bool _isSubmitting = false;
-
-
-  final List<String> _departments = ['COA', 'COE', 'CCS', 'CBAE'];
-
-
-  Future<void> _pickFiles() async {
->>>>>>> c3e067d78a3dd4cf7368b66f56c38a2e71ca3da2
-    final result = await FilePicker.platform.pickFiles(allowMultiple: true);
-    if (result != null) {
+  void _onDescriptionChanged() {
+    final text = _descController.text.trim();
+    if (text.length > 10) {
+      _debounceAnalysis(text);
+    } else {
       setState(() {
-        _files = result.files;
+        _predictedCategory = null;
+        _predictedOffice = null;
       });
     }
   }
 
-<<<<<<< HEAD
+  DateTime? _lastAnalysisTime;
+  void _debounceAnalysis(String text) async {
+    final now = DateTime.now();
+    _lastAnalysisTime = now;
+    
+    await Future.delayed(const Duration(milliseconds: 800));
+    if (_lastAnalysisTime != now) return;
+
+    if (mounted) {
+      setState(() => _isAnalyzingRealtime = true);
+      final result = await ref.read(aiServiceProvider).analyzeConcern(text);
+      if (mounted && _lastAnalysisTime == now) {
+        setState(() {
+          _predictedCategory = result['category'];
+          _predictedOffice = result['department'];
+          _isAnalyzingRealtime = false;
+        });
+      }
+    }
+  }
+
+  void _pickFiles() async {
+    final result = await FilePicker.platform.pickFiles(allowMultiple: true);
+    if (result != null) {
+      setState(() {
+        _files.addAll(result.files);
+      });
+    }
+  }
+
+  void _removeFile(int index) {
+    setState(() {
+      _files.removeAt(index);
+    });
+  }
+
   void _submitForm() async {
     if (_formKey.currentState!.validate()) {
       if (_selectedDept == null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please select a department')),
+          const SnackBar(content: Text('Please select your department')),
         );
         return;
       }
 
-      final currentStudentId = ref.read(userIdProvider) ?? 'anonymous';
-      
-      final concern = Concern(
-        id: const Uuid().v4(),
-        studentId: _isAnonymous ? 'anonymous' : _studentIdController.text.trim(),
-        studentName: _isAnonymous ? 'Anonymous' : _nameController.text.trim(),
-        program: _selectedDept!, // Ginagamit natin ang Dept bilang program/college
-        title: _titleController.text.trim(),
-        description: _descController.text.trim(),
-        category: _category,
-        department: _selectedDept!,
-        status: ConcernStatus.submitted,
-        createdAt: DateTime.now(),
-        isAnonymous: _isAnonymous,
-        attachments: _files.map((f) => f.name).toList(),
-      );
+      setState(() => _isSubmitting = true);
 
       try {
+        final currentStudentId = ref.read(userIdProvider) ?? 'anonymous';
+        
+        final aiResult = await ref.read(aiServiceProvider).analyzeConcern(_descController.text);
+        final determinedCategory = aiResult['category'] as ConcernCategory;
+        final targetOffice = aiResult['department'] as String;
+
+        List<String> fileUrls = [];
+        if (_files.isNotEmpty) {
+          fileUrls = await ref.read(storageServiceProvider).uploadFiles(_files, 'student_attachments');
+        }
+
+        final concern = Concern(
+          id: const Uuid().v4(),
+          studentId: currentStudentId, 
+          studentName: _isAnonymous ? 'Anonymous' : (_nameController.text.isEmpty ? 'Student' : _nameController.text.trim()),
+          program: _selectedDept!,
+          title: _titleController.text.trim(),
+          description: _descController.text.trim(),
+          category: determinedCategory,
+          department: _selectedDept!,
+          status: ConcernStatus.submitted,
+          createdAt: DateTime.now(),
+          isAnonymous: _isAnonymous,
+          attachments: fileUrls,
+          assignedTo: targetOffice,
+        );
+
         await ref.read(concernServiceProvider).submitConcern(concern);
+        
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Concern submitted successfully!')),
-          );
-          Navigator.pop(context);
+          _showSuccessDialog(determinedCategory.name.toUpperCase(), targetOffice);
         }
       } catch (e) {
         if (mounted) {
+          setState(() => _isSubmitting = false);
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Error: $e')),
           );
@@ -122,355 +152,294 @@ class _StudentFormState extends ConsumerState<StudentForm> {
     }
   }
 
-=======
-
-  void _resetForm() {
-    _nameController.clear();
-    _studentIdController.clear();
-    _titleController.clear();
-    _descriptionController.clear();
-    setState(() {
-      _selectedDepartment = null;
-      _selectedCategory = ConcernCategory.academic;
-      _isAnonymous = false;
-      _files = [];
-      _isSubmitting = false;
-    });
-  }
-
-
-  @override
-  void dispose() {
-    _nameController.dispose();
-    _studentIdController.dispose();
-    _titleController.dispose();
-    _descriptionController.dispose();
-    super.dispose();
-  }
-
-
->>>>>>> c3e067d78a3dd4cf7368b66f56c38a2e71ca3da2
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Submit a Concern'),
-        backgroundColor: Colors.red,
-        foregroundColor: Colors.white,
-      ),
-<<<<<<< HEAD
-      body: Column(
-        children: [
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(16.0),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // --- Student Information Section ---
-                    const Text('Student Information',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.black87)),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: _nameController,
-                      decoration: const InputDecoration(
-                        hintText: 'Full Name',
-                        border: OutlineInputBorder(),
-                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      ),
-                      enabled: !_isAnonymous,
-                      validator: (value) => !_isAnonymous && (value == null || value.isEmpty) ? 'Required' : null,
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: _studentIdController,
-                      decoration: const InputDecoration(
-                        hintText: 'Student ID',
-                        border: OutlineInputBorder(),
-                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      ),
-                      enabled: !_isAnonymous,
-                      validator: (value) => !_isAnonymous && (value == null || value.isEmpty) ? 'Required' : null,
-                    ),
-                    const SizedBox(height: 12),
-                    DropdownButtonFormField<String>(
-                      value: _selectedDept,
-                      decoration: const InputDecoration(
-                        labelText: 'Department/College',
-                        hintText: 'Select Department',
-                        border: OutlineInputBorder(),
-                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      ),
-                      items: _departments.map((d) => DropdownMenuItem(value: d, child: Text(d))).toList(),
-                      onChanged: (val) => setState(() => _selectedDept = val),
-                    ),
-                    const SizedBox(height: 12),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('Submit Anonymously', style: TextStyle(fontSize: 14)),
-                      subtitle: const Text('Your name and ID will be hidden from staff', style: TextStyle(fontSize: 12)),
-                      value: _isAnonymous,
-                      onChanged: (val) => setState(() => _isAnonymous = val),
-                    ),
-
-                    const SizedBox(height: 24),
-
-                    // --- Concern Details Section ---
-                    const Text('Concern Details',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.black87)),
-                    const SizedBox(height: 12),
-                    DropdownButtonFormField<ConcernCategory>(
-                      value: _category,
-                      decoration: const InputDecoration(
-                        labelText: 'Category',
-                        border: OutlineInputBorder(),
-                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      ),
-                      items: ConcernCategory.values.map((c) => DropdownMenuItem(
-                        value: c, 
-                        child: Text(c.name.toUpperCase())
-                      )).toList(),
-                      onChanged: (val) => setState(() => _category = val!),
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: _titleController,
-                      decoration: const InputDecoration(
-                        hintText: 'Title',
-                        border: OutlineInputBorder(),
-                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      ),
-                      validator: (value) => value == null || value.isEmpty ? 'Required' : null,
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: _descController,
-                      maxLines: 5,
-                      decoration: const InputDecoration(
-                        hintText: 'Description',
-                        border: OutlineInputBorder(),
-                        contentPadding: EdgeInsets.all(12),
-                      ),
-                      validator: (value) => value == null || value.isEmpty ? 'Required' : null,
-                    ),
-                    const SizedBox(height: 12),
-
-                    // --- Attachments Section ---
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: Colors.red.withOpacity(0.05),
-                        border: Border.all(color: Colors.red.withOpacity(0.1)),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.attach_file, color: Colors.red, size: 20),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(_files.isEmpty ? 'Attachments' : '${_files.length} files selected', 
-                                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
-                                const Text('Optional files', style: TextStyle(fontSize: 12, color: Colors.black54)),
-                              ],
-                            ),
-                          ),
-                          TextButton(
-                            onPressed: _pickFiles,
-                            child: const Text('SELECT', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-
-          // --- Submit Button (Bottom) ---
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(16),
-            child: ElevatedButton(
-              onPressed: _submitForm,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
-              ),
-              child: const Text('SUBMIT CONCERN', style: TextStyle(fontWeight: FontWeight.bold)),
-            ),
-=======
-      body: Stack(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Form(
-              key: _formKey,
-              child: ListView(
-                children: [
-                  const Text('Student Information', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 16),
-                  if (!_isAnonymous) ...[
-                    TextFormField(
-                      controller: _nameController,
-                      decoration: const InputDecoration(labelText: 'Full Name', border: OutlineInputBorder()),
-                      validator: (value) => value == null || value.isEmpty ? 'Required' : null,
-                    ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: _studentIdController,
-                      decoration: const InputDecoration(labelText: 'Student ID', border: OutlineInputBorder()),
-                      validator: (value) => value == null || value.isEmpty ? 'Required' : null,
-                    ),
-                    const SizedBox(height: 16),
-                  ],
-                  DropdownButtonFormField<String>(
-                    value: _selectedDepartment,
-                    hint: const Text('Select Department'),
-                    items: _departments.map((dept) {
-                      return DropdownMenuItem(value: dept, child: Text(dept));
-                    }).toList(),
-                    onChanged: (value) => setState(() => _selectedDepartment = value),
-                    decoration: const InputDecoration(labelText: 'Department/College', border: OutlineInputBorder()),
-                    validator: (value) => value == null ? 'Please select a department' : null,
-                  ),
-                  const SizedBox(height: 16),
-                  SwitchListTile(
-                    title: const Text('Submit Anonymously'),
-                    subtitle: const Text('Your name and ID will be hidden from staff'),
-                    value: _isAnonymous,
-                    onChanged: (value) => setState(() => _isAnonymous = value),
-                    activeColor: Colors.red,
-                  ),
-                  const Divider(height: 32),
-                  const Text('Concern Details', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 16),
-                  DropdownButtonFormField<ConcernCategory>(
-                    value: _selectedCategory,
-                    items: ConcernCategory.values.map((cat) {
-                      return DropdownMenuItem(value: cat, child: Text(cat.name.toUpperCase()));
-                    }).toList(),
-                    onChanged: (value) => setState(() => _selectedCategory = value!),
-                    decoration: const InputDecoration(labelText: 'Category', border: OutlineInputBorder()),
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _titleController,
-                    decoration: const InputDecoration(labelText: 'Title', border: OutlineInputBorder()),
-                    validator: (value) => value == null || value.isEmpty ? 'Required' : null,
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _descriptionController,
-                    decoration: const InputDecoration(labelText: 'Description', border: OutlineInputBorder()),
-                    maxLines: 5,
-                    validator: (value) => value == null || value.isEmpty ? 'Required' : null,
-                  ),
-                  const SizedBox(height: 16),
-                  Card(
-                    child: ListTile(
-                      leading: const Icon(Icons.attach_file, color: Colors.red),
-                      title: const Text('Attachments'),
-                      subtitle: Text(_files.isEmpty ? 'Optional files' : '\${_files.length} files selected'),
-                      trailing: TextButton(onPressed: _pickFiles, child: const Text('SELECT', style: TextStyle(color: Colors.red))),
-                    ),
-                  ),
-                  const SizedBox(height: 32),
-                  ElevatedButton(
-                    onPressed: _isSubmitting ? null : _submit,
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      backgroundColor: Colors.red,
-                      foregroundColor: Colors.white,
-                    ),
-                    child: _isSubmitting
-                        ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                        : const Text('SUBMIT CONCERN', style: TextStyle(fontWeight: FontWeight.bold)),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          if (_isSubmitting) Container(color: Colors.black26, child: const Center(child: CircularProgressIndicator(color: Colors.red))),
-        ],
-      ),
-    );
-  }
-
-
-  void _submit() async {
-    if (_formKey.currentState!.validate()) {
-      setState(() => _isSubmitting = true);
-
-
-      try {
-        final currentStudentId = ref.read(userIdProvider) ?? 'anonymous';
-
-        final concern = Concern(
-          id: const Uuid().v4(),
-          studentId: _isAnonymous ? 'anonymous' : currentStudentId,
-          studentName: _isAnonymous ? 'Anonymous' : _nameController.text,
-          department: _selectedDepartment ?? 'Unknown',
-          title: _titleController.text,
-          description: _descriptionController.text,
-          category: _selectedCategory,
-          status: ConcernStatus.submitted,
-          createdAt: DateTime.now(),
-          isAnonymous: _isAnonymous,
-          attachments: _files.map((f) => 'fake_url/\${f.name}').toList(),
-          program: _program,
-        );
-
-
-        await ref.read(concernServiceProvider).submitConcern(concern);
-
-
-        if (mounted) {
-          _showSuccessDialog();
-          _resetForm();
-        }
-      } catch (e) {
-        if (mounted) {
-          setState(() => _isSubmitting = false);
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: \$e')));
-        }
-      }
-    }
-  }
-
-
-  void _showSuccessDialog() {
+  void _showSuccessDialog(String categoryName, String office) {
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
-        title: const Text('Success!'),
-        content: const Text('Your concern has been submitted successfully. Please wait for our response.'),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Column(
+          children: [
+            Icon(Icons.check_circle, color: Colors.green, size: 60),
+            SizedBox(height: 16),
+            Text('Concern Submitted!', textAlign: TextAlign.center),
+          ],
+        ),
+        content: Text(
+          'Our AI has categorized this as $categoryName and routed it to the $office.\n\nYou can track its progress in your dashboard.',
+          textAlign: TextAlign.center,
+        ),
         actions: [
-          TextButton(
-              onPressed: () {
-                Navigator.pop(context); // Close dialog
-                Navigator.pushReplacement(
-                    context,
-                    MaterialPageRoute(builder: (context) => const StudentDashboard())
-                );
-              },
-              child: const Text('VIEW TRACKED CONCERNS', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold))
->>>>>>> c3e067d78a3dd4cf7368b66f56c38a2e71ca3da2
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(builder: (context) => const StudentDashboard())
+                  );
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                child: const Text('GO TO DASHBOARD')
+            ),
           ),
         ],
       ),
     );
   }
-}
-<<<<<<< HEAD
-=======
 
->>>>>>> c3e067d78a3dd4cf7368b66f56c38a2e71ca3da2
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.grey[50],
+      appBar: AppBar(
+        title: const Text('Submit a Concern', style: TextStyle(fontWeight: FontWeight.w600)),
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black87,
+        elevation: 0.5,
+      ),
+      body: Stack(
+        children: [
+          Column(
+            children: [
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(20.0),
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildSectionHeader('STUDENT IDENTITY', Icons.person_outline),
+                        _buildIdentityCard(),
+                        const SizedBox(height: 24),
+                        _buildSectionHeader('CONCERN CONTENT', Icons.edit_note_outlined),
+                        _buildConcernCard(),
+                        if (_predictedCategory != null || _isAnalyzingRealtime) 
+                          _buildAIInsightCard(),
+                        const SizedBox(height: 24),
+                        _buildSectionHeader('ATTACHMENTS', Icons.attach_file_outlined),
+                        _buildFilePickerSection(),
+                        const SizedBox(height: 40),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              _buildSubmitButton(),
+            ],
+          ),
+          if (_isSubmitting) 
+            Container(
+              color: Colors.black54, 
+              child: const Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(color: Colors.white),
+                    SizedBox(height: 24),
+                    Text('AI Processing & Routing...', 
+                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSectionHeader(String title, IconData icon) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 4, bottom: 8),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: Colors.red),
+          const SizedBox(width: 8),
+          Text(title, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey, letterSpacing: 1.2)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildIdentityCard() {
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: Colors.grey[200]!)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            DropdownButtonFormField<String>(
+              value: _selectedDept,
+              decoration: const InputDecoration(
+                labelText: 'Your College/Section',
+                prefixIcon: Icon(Icons.school_outlined),
+                border: OutlineInputBorder(),
+              ),
+              items: _departments.map((d) => DropdownMenuItem(value: d, child: Text(d))).toList(),
+              onChanged: (val) => setState(() => _selectedDept = val),
+              validator: (value) => value == null ? 'Selection required' : null,
+            ),
+            const SizedBox(height: 16),
+            if (!_isAnonymous)
+              TextFormField(
+                controller: _nameController,
+                decoration: const InputDecoration(
+                  labelText: 'Full Name',
+                  prefixIcon: Icon(Icons.badge_outlined),
+                  border: OutlineInputBorder(),
+                ),
+                validator: (v) => v == null || v.isEmpty ? 'Name required' : null,
+              ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Submit Anonymously', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+              subtitle: const Text('Hide your name from staff reviews', style: TextStyle(fontSize: 11)),
+              value: _isAnonymous,
+              onChanged: (val) => setState(() => _isAnonymous = val),
+              activeColor: Colors.red,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildConcernCard() {
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: Colors.grey[200]!)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            TextFormField(
+              controller: _titleController,
+              decoration: const InputDecoration(
+                labelText: 'Subject',
+                hintText: 'e.g. Missing grade in IT 101',
+                prefixIcon: Icon(Icons.title),
+                border: OutlineInputBorder(),
+              ),
+              validator: (v) => v == null || v.isEmpty ? 'Subject required' : null,
+            ),
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: _descController,
+              maxLines: 4,
+              decoration: const InputDecoration(
+                labelText: 'Detailed Description',
+                hintText: 'Please provide as much detail as possible...',
+                alignLabelWithHint: true,
+                border: OutlineInputBorder(),
+              ),
+              validator: (v) => v == null || v.isEmpty ? 'Description required' : null,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAIInsightCard() {
+    return Container(
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.orange.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.orange.withOpacity(0.2)),
+      ),
+      child: Row(
+        children: [
+          _isAnalyzingRealtime 
+            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.orange))
+            : const Icon(Icons.auto_awesome, color: Colors.orange, size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('AI LIVE INSIGHT', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.orange)),
+                Text(
+                  _isAnalyzingRealtime 
+                    ? 'Analyzing your concern...' 
+                    : 'This will be routed to the ${_predictedOffice ?? "correct department"}.',
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFilePickerSection() {
+    return Column(
+      children: [
+        InkWell(
+          onTap: _pickFiles,
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 20),
+            width: double.infinity,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.grey[300]!, style: BorderStyle.solid),
+            ),
+            child: Column(
+              children: [
+                Icon(Icons.cloud_upload_outlined, color: Colors.grey[400], size: 32),
+                const SizedBox(height: 8),
+                const Text('Click to upload documents/images', style: TextStyle(color: Colors.grey, fontSize: 13)),
+              ],
+            ),
+          ),
+        ),
+        if (_files.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          ..._files.asMap().entries.map((entry) => Card(
+            margin: const EdgeInsets.only(bottom: 8),
+            elevation: 0,
+            color: Colors.grey[100],
+            child: ListTile(
+              leading: const Icon(Icons.insert_drive_file, color: Colors.red),
+              title: Text(entry.value.name, style: const TextStyle(fontSize: 12)),
+              subtitle: Text('${(entry.value.size / 1024).toStringAsFixed(1)} KB', style: const TextStyle(fontSize: 10)),
+              trailing: IconButton(icon: const Icon(Icons.close, size: 18), onPressed: () => _removeFile(entry.key)),
+            ),
+          )),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildSubmitButton() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, -5))],
+      ),
+      child: ElevatedButton(
+        onPressed: _isSubmitting ? null : _submitForm,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.red,
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          elevation: 0,
+        ),
+        child: const Text('SUBMIT REQUEST', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, letterSpacing: 1)),
+      ),
+    );
+  }
+}

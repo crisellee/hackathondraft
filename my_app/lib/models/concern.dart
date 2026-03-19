@@ -45,7 +45,7 @@ class Concern {
   Map<String, dynamic> toMap() {
     return {
       'id': id,
-      'studentId': isAnonymous ? 'anonymous_id' : studentId,
+      'studentId': studentId,
       'studentName': isAnonymous ? 'Anonymous' : studentName,
       'department': department,
       'title': title,
@@ -116,4 +116,3 @@ class Concern {
     );
   }
 }
-

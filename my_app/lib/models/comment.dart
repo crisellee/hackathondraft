@@ -7,6 +7,7 @@ class Comment {
   final String senderName;
   final String message;
   final DateTime timestamp;
+  final bool isInternal; // NEW: To identify private admin notes
 
   Comment({
     required this.id,
@@ -15,6 +16,7 @@ class Comment {
     required this.senderName,
     required this.message,
     required this.timestamp,
+    this.isInternal = false,
   });
 
   Map<String, dynamic> toMap() {
@@ -25,6 +27,7 @@ class Comment {
       'senderName': senderName,
       'message': message,
       'timestamp': Timestamp.fromDate(timestamp),
+      'isInternal': isInternal,
     };
   }
 
@@ -36,6 +39,7 @@ class Comment {
       senderName: map['senderName'] ?? '',
       message: map['message'] ?? '',
       timestamp: (map['timestamp'] as Timestamp).toDate(),
+      isInternal: map['isInternal'] ?? false,
     );
   }
 }

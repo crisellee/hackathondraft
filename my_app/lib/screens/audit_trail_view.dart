@@ -25,7 +25,7 @@ class AuditTrailView extends ConsumerWidget {
             return const Center(child: CircularProgressIndicator(color: Colors.red));
           }
           if (snapshot.hasError) {
-            return Center(child: Text('Error: \${snapshot.error}'));
+            return Center(child: Text('Error: ${snapshot.error}'));
           }
           if (!snapshot.hasData || snapshot.data!.isEmpty) {
             return const Center(
@@ -81,7 +81,7 @@ class AuditTrailView extends ConsumerWidget {
                           const Icon(Icons.person_outline, size: 14, color: Colors.grey),
                           const SizedBox(width: 4),
                           Text(
-                            'Performed by: \${log.actorId}',
+                            'Performed by: ${log.actorId}',
                             style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: Colors.grey),
                           ),
                         ],
@@ -97,4 +97,3 @@ class AuditTrailView extends ConsumerWidget {
     );
   }
 }
-

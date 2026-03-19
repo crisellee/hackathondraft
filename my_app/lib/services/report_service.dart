@@ -15,7 +15,7 @@ class ReportService {
 
     var filtered = concerns;
     if (category != null) filtered = filtered.where((c) => c.category.name == category).toList();
-    if (department != null) filtered = filtered.where((c) => c.assignedTo == department).toList();
+    if (department != null) filtered = filtered.where((c) => c.assignedTo == department || c.department == department).toList();
 
 
     pdf.addPage(
@@ -44,7 +44,7 @@ class ReportService {
                 c.category.name.toUpperCase(),
                 c.status.name.toUpperCase(),
                 DateFormat('MM/dd').format(c.createdAt),
-                c.assignedTo ?? 'N/A',
+                c.assignedTo ?? c.department,
               ]).toList(),
               headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
               headerDecoration: const pw.BoxDecoration(color: PdfColors.grey300),
@@ -88,14 +88,12 @@ class ReportService {
         c.isAnonymous,
         c.studentId,
         c.program,
-        c.assignedTo ?? ""
+        c.assignedTo ?? c.department
       ]);
     }
 
 
     String csvData = const ListToCsvConverter().convert(rows);
     debugPrint('CSV Export Triggered. Data length: ${csvData.length}');
-    // In a production app, you would use file_saver or anchor element for web downloads.
   }
 }
-
