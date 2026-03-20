@@ -21,11 +21,14 @@ void main() async {
   runApp(const ProviderScope(child: ConcernTrackApp()));
 }
 
-class ConcernTrackApp extends StatelessWidget {
+class ConcernTrackApp extends ConsumerWidget {
   const ConcernTrackApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final role = ref.watch(userRoleProvider);
+    final userId = ref.watch(userIdProvider);
+
     return MaterialApp(
       title: 'ConcernTrack',
       debugShowCheckedModeBanner: false,
@@ -34,7 +37,9 @@ class ConcernTrackApp extends StatelessWidget {
         useMaterial3: true,
         appBarTheme: const AppBarTheme(backgroundColor: Colors.red, foregroundColor: Colors.white),
       ),
-      home: const LoginScreen(),
+      home: (role != null && userId != null) 
+          ? const MainNavigation() 
+          : const LoginScreen(),
     );
   }
 }
@@ -84,7 +89,7 @@ class MainNavigation extends ConsumerWidget {
               title: const Text('Logout', style: TextStyle(color: Colors.red)),
               onTap: () {
                 ref.read(userRoleProvider.notifier).state = null;
-                Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const LoginScreen()));
+                ref.read(userIdProvider.notifier).state = null;
               },
             ),
           ],
@@ -146,10 +151,10 @@ class _NavCard extends StatelessWidget {
       onTap: onPressed,
       child: Container(
         width: 300,
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(
           color: isPrimary ? Colors.red : Colors.white,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(16),
           boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10)],
         ),
         child: Column(

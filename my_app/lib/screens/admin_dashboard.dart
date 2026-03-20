@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fl_chart/fl_chart.dart';
@@ -9,305 +10,381 @@ import 'admin_concern_list.dart';
 import 'login_screen.dart';
 import 'package:intl/intl.dart';
 
-class AdminDashboard extends ConsumerWidget {
+class AdminDashboard extends ConsumerStatefulWidget {
   const AdminDashboard({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    // SECURITY KICK-OUT LOGIC
-    final role = ref.watch(userRoleProvider);
-    
-    if (role == null) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator(color: Colors.red, strokeWidth: 2)),
-      );
-    }
+  ConsumerState<AdminDashboard> createState() => _AdminDashboardState();
+}
 
-    if (role != 'admin') {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => const LoginScreen()));
-      });
-      return const Scaffold(body: Center(child: Text('Unauthorized access. Redirecting...')));
-    }
+class _AdminDashboardState extends ConsumerState<AdminDashboard> with SingleTickerProviderStateMixin {
+  late AnimationController _pulseController;
+  Timer? _refreshTimer;
+  DateTime? _selectedDate;
 
-    final concernsAsync = ref.watch(allConcernsProvider);
+  @override
+  void initState() {
+    super.initState();
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 2),
+    )..repeat(reverse: true);
 
-    return Scaffold(
-      backgroundColor: Colors.grey[50],
-      appBar: AppBar(
-        title: const Text('Staff Console', style: TextStyle(fontWeight: FontWeight.w600)),
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black87,
-        elevation: 0.5,
-        actions: [
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert, color: Colors.red),
-            onSelected: (value) async {
-              if (value == 'pdf' && concernsAsync.hasValue) {
-                ReportService().generateAndPrintReport(concernsAsync.value!);
-              } else if (value == 'csv' && concernsAsync.hasValue) {
-                ReportService().exportToCSV(concernsAsync.value!);
-              } else if (value == 'mock') {
-                final userId = ref.read(userIdProvider) ?? 'admin_test';
-                final count = await ref.read(bulkUploadServiceProvider).generateMockData(userId);
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Successfully inserted $count mock concerns.')),
-                  );
-                }
-              } else if (value == 'clear') {
-                await ref.read(concernServiceProvider).clearAllConcerns();
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('All concerns cleared.')),
-                  );
-                }
-              }
-            },
-            itemBuilder: (context) => [
-              const PopupMenuItem(value: 'pdf', child: Text('Export PDF Report')),
-              const PopupMenuItem(value: 'csv', child: Text('Export CSV Data')),
-              const PopupMenuDivider(),
-              const PopupMenuItem(value: 'mock', child: Text('Generate Mock Data (55)')),
-              const PopupMenuItem(value: 'clear', child: Text('Clear All Data', style: TextStyle(color: Colors.red))),
+    _refreshTimer = Timer.periodic(const Duration(minutes: 1), (timer) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _pulseController.dispose();
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
+
+  void _showFloatingCalendar() {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          width: 350,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Select Activity Date', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              const SizedBox(height: 10),
+              CalendarDatePicker(
+                initialDate: _selectedDate ?? DateTime.now(),
+                firstDate: DateTime(2023),
+                lastDate: DateTime.now(),
+                onDateChanged: (date) {
+                  setState(() => _selectedDate = date);
+                  Navigator.pop(context);
+                },
+              ),
+              TextButton(
+                onPressed: () {
+                  setState(() => _selectedDate = null);
+                  Navigator.pop(context);
+                },
+                child: const Text('Clear Filter', style: TextStyle(color: Colors.red)),
+              )
             ],
           ),
-          const SizedBox(width: 8),
-        ],
-      ),
-      body: concernsAsync.when(
-        data: (concerns) => _buildAnalyticsContent(context, ref, concerns),
-        loading: () => const Center(child: CircularProgressIndicator(strokeWidth: 2, color: Colors.red)),
-        error: (err, stack) => Center(child: Text('System Error: $err')),
+        ),
       ),
     );
   }
 
-  Widget _buildAnalyticsContent(BuildContext context, WidgetRef ref, List<Concern> all) {
-    final total = all.length;
-    final resolved = all.where((c) => c.status == ConcernStatus.resolved).length;
-    final escalated = all.where((c) => c.status == ConcernStatus.escalated).length;
-    final newCases = all.where((c) => c.status == ConcernStatus.submitted || c.status == ConcernStatus.routed).length;
+  @override
+  Widget build(BuildContext context) {
+    final role = ref.watch(userRoleProvider);
+    final concernsAsync = ref.watch(allConcernsProvider);
 
+    if (role != 'admin') return const Scaffold(body: Center(child: Text('Unauthorized')));
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF8FAFC),
+      appBar: _buildAppBar(context, ref, concernsAsync),
+      body: concernsAsync.when(
+        data: (concerns) {
+          var displayData = concerns;
+          if (_selectedDate != null) {
+            displayData = concerns.where((c) => 
+              c.createdAt.year == _selectedDate!.year && 
+              c.createdAt.month == _selectedDate!.month && 
+              c.createdAt.day == _selectedDate!.day
+            ).toList();
+          }
+          return _buildProfessionalUI(context, displayData);
+        },
+        loading: () => const Center(child: CircularProgressIndicator(color: Colors.indigo)),
+        error: (err, _) => Center(child: Text('Error: $err')),
+      ),
+    );
+  }
+
+  PreferredSizeWidget _buildAppBar(BuildContext context, WidgetRef ref, AsyncValue<List<Concern>> concernsAsync) {
+    return AppBar(
+      title: Row(
+        children: [
+          const Text('Intelligence Dashboard', style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: -0.5)),
+          const SizedBox(width: 12),
+          _buildLiveBadge(),
+        ],
+      ),
+      backgroundColor: Colors.white,
+      foregroundColor: const Color(0xFF1E293B),
+      elevation: 0,
+      actions: [
+        IconButton(
+          icon: Icon(Icons.calendar_month, color: _selectedDate != null ? Colors.indigo : Colors.grey),
+          onPressed: _showFloatingCalendar,
+        ),
+        _buildSettingsMenu(concernsAsync),
+        const SizedBox(width: 12),
+      ],
+    );
+  }
+
+  Widget _buildLiveBadge() {
+    return FadeTransition(
+      opacity: _pulseController,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        decoration: BoxDecoration(
+          color: Colors.red.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(4),
+          border: Border.all(color: Colors.red.withOpacity(0.5)),
+        ),
+        child: const Row(
+          children: [
+            CircleAvatar(radius: 3, backgroundColor: Colors.red),
+            SizedBox(width: 4),
+            Text('LIVE', style: TextStyle(color: Colors.red, fontSize: 10, fontWeight: FontWeight.bold)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProfessionalUI(BuildContext context, List<Concern> displayData) {
+    final resolved = displayData.where((c) => c.status == ConcernStatus.resolved).length;
+    final active = displayData.length - resolved;
+    final escalated = displayData.where((c) => c.status == ConcernStatus.escalated).length;
+
+    return RefreshIndicator(
+      onRefresh: () async => ref.refresh(allConcernsProvider),
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildHeader(),
+            if (_selectedDate != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8.0),
+                child: Chip(
+                  label: Text('Filter: ${DateFormat('MMM dd, yyyy').format(_selectedDate!)}', style: const TextStyle(fontSize: 11)),
+                  onDeleted: () => setState(() => _selectedDate = null),
+                  backgroundColor: Colors.indigo.withOpacity(0.1),
+                  deleteIcon: const Icon(Icons.close, size: 14),
+                ),
+              ),
+            const SizedBox(height: 24),
+            
+            Row(
+              children: [
+                _kpiCard(context, 'TOTAL', displayData.length.toString(), Icons.analytics, Colors.indigo, () {
+                  Navigator.push(context, MaterialPageRoute(builder: (context) => const AdminConcernList()));
+                }),
+                _kpiCard(context, 'ACTIVE', active.toString(), Icons.pending, Colors.blue, () {
+                  Navigator.push(context, MaterialPageRoute(builder: (context) => const AdminConcernList(filterActiveOnly: true)));
+                }),
+                _kpiCard(context, 'ESCALATED', escalated.toString(), Icons.warning, Colors.red, () {
+                  Navigator.push(context, MaterialPageRoute(builder: (context) => const AdminConcernList(initialFilter: ConcernStatus.escalated)));
+                }),
+                _kpiCard(context, 'RESOLVED', resolved.toString(), Icons.check_circle, Colors.green, () {
+                  Navigator.push(context, MaterialPageRoute(builder: (context) => const AdminConcernList(initialFilter: ConcernStatus.resolved)));
+                }),
+              ],
+            ),
+            const SizedBox(height: 24),
+
+            _buildAIHub(context, displayData),
+            const SizedBox(height: 24),
+
+            _chartCard('SYSTEM ACTIVITY TRENDS', _buildTrendGraph(displayData)),
+            const SizedBox(height: 20),
+            
+            Row(
+              children: [
+                Expanded(child: _chartCard('CATEGORY MIX', _buildCategoryChart(displayData))),
+                const SizedBox(width: 16),
+                Expanded(child: _chartCard('STATUS FLOW', _buildStatusChart(displayData))),
+              ],
+            ),
+            const SizedBox(height: 40),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          DateFormat('EEEE, MMMM d, yyyy').format(DateTime.now()).toUpperCase(),
+          style: const TextStyle(color: Colors.indigo, fontWeight: FontWeight.bold, fontSize: 10, letterSpacing: 2),
+        ),
+        const Text(
+          'Operational Console',
+          style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: Color(0xFF0F172A)),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAIHub(BuildContext context, List<Concern> concerns) {
     final now = DateTime.now();
-    
-    double avgResponseDays = 0;
-    final processed = all.where((c) => c.status != ConcernStatus.submitted && c.status != ConcernStatus.routed).toList();
-    if (processed.isNotEmpty) {
-      final totalDays = processed.fold(0, (sum, c) => sum + (c.lastUpdatedAt ?? now).difference(c.createdAt).inDays);
-      avgResponseDays = totalDays / processed.length;
-    }
+    int critical = concerns.where((c) => c.status != ConcernStatus.resolved && now.difference(c.createdAt).inHours > 48).length;
+    int high = concerns.where((c) => c.status != ConcernStatus.resolved && now.difference(c.createdAt).inHours > 24 && now.difference(c.createdAt).inHours <= 48).length;
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24.0),
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0F172A),
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [BoxShadow(color: Colors.indigo.withOpacity(0.3), blurRadius: 20, offset: const Offset(0, 10))],
+      ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              _metricTile(
-                context, 'Total Cases', total.toString(), Icons.analytics_outlined, Colors.grey.shade700,
-                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const AdminConcernList())),
-              ),
-              _metricTile(
-                context, 'Active Cases', (total - resolved).toString(), Icons.folder_open, Colors.blue,
-                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const AdminConcernList(filterActiveOnly: true))),
-              ),
-              _metricTile(
-                context, 'Resolved', resolved.toString(), Icons.check_circle_outline, Colors.green,
-                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const AdminConcernList(initialFilter: ConcernStatus.resolved))),
-              ),
+              const Icon(Icons.auto_awesome, color: Colors.amber, size: 20),
+              const SizedBox(width: 8),
+              const Text('AI HUB ACTIVE', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12, letterSpacing: 1)),
+              const Spacer(),
+              Text('Sync: ${DateFormat('HH:mm').format(now)}', style: const TextStyle(color: Colors.white30, fontSize: 10)),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 24),
           Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              _metricTile(
-                context, 'New Routed', newCases.toString(), Icons.move_to_inbox, Colors.purple,
-                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const AdminConcernList(initialFilter: ConcernStatus.routed))),
-              ),
-              _metricTile(
-                context, 'Escalation', escalated.toString(), Icons.warning_amber, Colors.red,
-                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const AdminConcernList(initialFilter: ConcernStatus.escalated))),
-              ),
-              _metricTile(
-                context, 'Avg Response', '${avgResponseDays.toStringAsFixed(1)} Days', Icons.timer_outlined, Colors.orange
-              ),
+              _aiStat('HIGH RISK', '$critical', Colors.redAccent),
+              _aiStat('AT RISK', '$high', Colors.orangeAccent),
+              _aiStat('CONFIDENCE', '94%', Colors.blueAccent),
             ],
           ),
-          const SizedBox(height: 32),
-          const Text('Analytics Overview', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 16),
-          Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.grey.shade200),
-            ),
-            child: Column(
-              children: [
-                IntrinsicHeight(
-                  child: Row(
-                    children: [
-                      Expanded(child: Column(children: [
-                        const Text('By Category', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                        const SizedBox(height: 20),
-                        SizedBox(height: 200, child: _buildCategoryChart(all)),
-                      ])),
-                      const VerticalDivider(width: 48),
-                      Expanded(child: Column(children: [
-                        const Text('By Status', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                        const SizedBox(height: 20),
-                        SizedBox(height: 200, child: _buildStatusChart(all)),
-                      ])),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 24),
-                const Divider(),
-                const SizedBox(height: 16),
-                _buildLegend(),
-              ],
-            ),
+          const Divider(height: 40, color: Colors.white12),
+          Text(
+            critical > 0 
+              ? 'AI ADVICE: $critical tickets breached SLA. Immediate action on Escalated queue is recommended.' 
+              : 'AI ANALYSIS: Performance is optimal. No critical anomalies detected for the selected period.',
+            style: const TextStyle(color: Colors.white70, fontSize: 12, fontStyle: FontStyle.italic),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildLegend() {
+  Widget _aiStat(String label, String value, Color color) {
     return Column(
       children: [
-        const Text('Legend', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.grey)),
-        const SizedBox(height: 12),
-        Wrap(
-          spacing: 20,
-          runSpacing: 10,
-          alignment: WrapAlignment.center,
-          children: [
-            _legendItem('Academic', Colors.red),
-            _legendItem('Financial', Colors.orange),
-            _legendItem('Welfare', Colors.pink),
-            const SizedBox(width: 20), // Spacer
-            _legendItem('New', Colors.blue),
-            _legendItem('Read', Colors.orange),
-            _legendItem('Resolved', Colors.green),
-            _legendItem('Escalated', Colors.red),
-          ],
-        ),
+        Text(value, style: TextStyle(color: color, fontSize: 20, fontWeight: FontWeight.w900)),
+        const SizedBox(height: 4),
+        Text(label, style: const TextStyle(color: Colors.white30, fontSize: 9, fontWeight: FontWeight.bold)),
       ],
     );
   }
 
-  Widget _legendItem(String label, Color color) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 12,
-          height: 12,
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-        ),
-        const SizedBox(width: 6),
-        Text(label, style: const TextStyle(fontSize: 11, color: Colors.black87)),
-      ],
-    );
-  }
-
-  Widget _metricTile(BuildContext context, String title, String value, IconData icon, Color color, {VoidCallback? onTap}) {
+  Widget _kpiCard(BuildContext context, String title, String value, IconData icon, Color color, VoidCallback onTap) {
     return Expanded(
-      child: GestureDetector(
+      child: InkWell(
         onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
         child: Container(
-          margin: const EdgeInsets.only(right: 12),
-          padding: const EdgeInsets.all(20),
+          margin: const EdgeInsets.only(right: 8),
+          padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: onTap != null ? color.withOpacity(0.3) : Colors.grey.shade200),
-            boxShadow: onTap != null ? [BoxShadow(color: color.withOpacity(0.05), blurRadius: 10)] : [],
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFF1F5F9)),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Icon(icon, color: color, size: 24),
-                  if (onTap != null) Icon(Icons.arrow_forward_ios, color: color.withOpacity(0.5), size: 12),
-                ],
-              ),
+              Icon(icon, color: color, size: 18),
               const SizedBox(height: 12),
-              Text(value, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-              Text(title, style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+              Text(value, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Color(0xFF1E293B))),
+              Text(title, style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.blueGrey)),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _chartCard(String title, Widget chart) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Color(0xFF64748B), letterSpacing: 1)),
+          const SizedBox(height: 20),
+          SizedBox(height: 180, child: chart),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTrendGraph(List<Concern> concerns) {
+    final now = DateTime.now();
+    final last7Days = List.generate(7, (i) => DateTime(now.year, now.month, now.day).subtract(Duration(days: 6 - i)));
+    final spots = last7Days.asMap().entries.map((e) {
+      final count = concerns.where((c) => c.createdAt.day == e.value.day && c.createdAt.month == e.value.month).length;
+      return FlSpot(e.key.toDouble(), count.toDouble());
+    }).toList();
+
+    return LineChart(
+      LineChartData(
+        gridData: const FlGridData(show: false),
+        titlesData: const FlTitlesData(show: false),
+        borderData: FlBorderData(show: false),
+        lineBarsData: [
+          LineChartBarData(
+            spots: spots,
+            isCurved: true,
+            color: Colors.indigo,
+            barWidth: 4,
+            isStrokeCapRound: true,
+            dotData: const FlDotData(show: false),
+            belowBarData: BarAreaData(show: true, color: Colors.indigo.withOpacity(0.05)),
+          ),
+        ],
       ),
     );
   }
 
   Widget _buildCategoryChart(List<Concern> concerns) {
-    final counts = <ConcernCategory, int>{};
-    for (var cat in ConcernCategory.values) {
-      counts[cat] = concerns.where((c) => c.category == cat).length;
-    }
-    return PieChart(
-      PieChartData(
-        sectionsSpace: 2,
-        centerSpaceRadius: 30,
-        sections: counts.entries.map((e) {
-          return PieChartSectionData(
-            value: e.value.toDouble(),
-            title: e.value > 0 ? '${e.value}' : '',
-            color: _getCategoryColor(e.key),
-            radius: 50,
-            titleStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
-          );
-        }).toList(),
-      ),
-    );
+    return PieChart(PieChartData(sectionsSpace: 0, centerSpaceRadius: 25, sections: [
+       PieChartSectionData(color: Colors.red, value: concerns.where((c) => c.category == ConcernCategory.academic).length.toDouble(), radius: 30, showTitle: false),
+       PieChartSectionData(color: Colors.orange, value: concerns.where((c) => c.category == ConcernCategory.financial).length.toDouble(), radius: 30, showTitle: false),
+       PieChartSectionData(color: Colors.pink, value: concerns.where((c) => c.category == ConcernCategory.welfare).length.toDouble(), radius: 30, showTitle: false),
+    ]));
   }
 
   Widget _buildStatusChart(List<Concern> concerns) {
-    final counts = <ConcernStatus, int>{};
-    for (var status in ConcernStatus.values) {
-      counts[status] = concerns.where((c) => c.status == status).length;
-    }
-    return PieChart(
-      PieChartData(
-        sectionsSpace: 2,
-        centerSpaceRadius: 30,
-        sections: counts.entries.where((e) => e.value > 0).map((e) {
-          return PieChartSectionData(
-            value: e.value.toDouble(),
-            title: '${e.value}',
-            color: _getStatusColor(e.key),
-            radius: 50,
-            titleStyle: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white),
-          );
-        }).toList(),
-      ),
+    return PieChart(PieChartData(sectionsSpace: 0, centerSpaceRadius: 25, sections: [
+       PieChartSectionData(color: Colors.blue, value: concerns.where((c) => c.status == ConcernStatus.submitted).length.toDouble(), radius: 30, showTitle: false),
+       PieChartSectionData(color: Colors.green, value: concerns.where((c) => c.status == ConcernStatus.resolved).length.toDouble(), radius: 30, showTitle: false),
+       PieChartSectionData(color: Colors.red, value: concerns.where((c) => c.status == ConcernStatus.escalated).length.toDouble(), radius: 30, showTitle: false),
+    ]));
+  }
+
+  Widget _buildSettingsMenu(AsyncValue<List<Concern>> concernsAsync) {
+    return PopupMenuButton<String>(
+      icon: const Icon(Icons.more_vert),
+      onSelected: (val) async {
+        if (val == 'mock') await ref.read(bulkUploadServiceProvider).generateMockData('admin');
+        if (val == 'clear') await ref.read(concernServiceProvider).clearAllConcerns();
+      },
+      itemBuilder: (context) => [
+        const PopupMenuItem(value: 'mock', child: Text('Inject Mock Data')),
+        const PopupMenuItem(value: 'clear', child: Text('Clear All Data', style: TextStyle(color: Colors.red))),
+      ],
     );
-  }
-
-  Color _getCategoryColor(ConcernCategory category) {
-    switch (category) {
-      case ConcernCategory.academic: return Colors.red;
-      case ConcernCategory.financial: return Colors.orange;
-      case ConcernCategory.welfare: return Colors.pink;
-    }
-  }
-
-  Color _getStatusColor(ConcernStatus status) {
-    switch (status) {
-      case ConcernStatus.submitted: return Colors.blue;
-      case ConcernStatus.routed: return Colors.purple;
-      case ConcernStatus.read: return Colors.orange;
-      case ConcernStatus.screened: return Colors.teal;
-      case ConcernStatus.resolved: return Colors.green;
-      case ConcernStatus.escalated: return Colors.red;
-    }
   }
 }

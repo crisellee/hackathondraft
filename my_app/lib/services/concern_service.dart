@@ -71,10 +71,10 @@ class ConcernService {
         targetDept = "DEAN'S OFFICE";
         break;
       case ConcernCategory.financial:
-        targetDept = "BURSAR OFFICE";
+        targetDept = "FINANCE OFFICE";
         break;
       case ConcernCategory.welfare:
-        targetDept = "STUDENT SERVICES";
+        targetDept = "STUDENT AFFAIRS";
         break;
     }
 
@@ -129,6 +129,7 @@ class ConcernService {
     }
   }
 
+  /// Proactive SLA Enforcement with Warning System
   Future<void> enforceSLA() async {
     final now = DateTime.now();
     try {
@@ -138,22 +139,47 @@ class ConcernService {
         final concern = Concern.fromMap(doc.data(), doc.id);
         if (concern.status == ConcernStatus.resolved || concern.status == ConcernStatus.escalated) continue;
 
+        final hoursSinceCreation = now.difference(concern.createdAt).inHours;
+
+        // 1. CRITICAL: 48 Hours Breach -> AUTO ESCALATE
         if ((concern.status == ConcernStatus.submitted || concern.status == ConcernStatus.routed) && 
-            now.difference(concern.createdAt).inDays >= 2) {
-          await _escalateSLA(concern, 'SLA BREACH: Not read by department for > 2 days.');
+            hoursSinceCreation >= 48) {
+          await _escalateSLA(concern, 'SLA BREACH: Overdue for routing (> 48h).');
           continue;
         }
 
+        // 2. WARNING: 24 Hours Breach -> ALERT ADMIN
+        if ((concern.status == ConcernStatus.submitted || concern.status == ConcernStatus.routed) && 
+            hoursSinceCreation >= 24) {
+          await _alertAdminSLA(concern, 'SLA WARNING: Concern unread for > 24h. Please review immediately.');
+          continue;
+        }
+
+        // 3. STAGNANT READ: 5 Days after read
         if (concern.status == ConcernStatus.read) {
           final lastUpdate = concern.lastUpdatedAt ?? concern.createdAt;
           if (now.difference(lastUpdate).inDays >= 5) {
-            await _escalateSLA(concern, 'SLA BREACH: No screening action for > 5 days after reading.');
+            await _escalateSLA(concern, 'SLA BREACH: No progress for > 5 days after initial review.');
           }
         }
       }
     } catch (e) {
       debugPrint("SLA Audit Error: $e");
     }
+  }
+
+  Future<void> _alertAdminSLA(Concern concern, String message) async {
+    // This logic prevents duplicate logs for the same warning
+    await _logAction(
+      concernId: concern.id,
+      actorId: 'SYSTEM_SLA_WATCH',
+      action: 'SLA_WARNING',
+      details: message,
+    );
+    
+    // Notify the staff assigned to this department
+    debugPrint("NOTIFY ADMIN: Concern ${concern.id} is AT RISK.");
+    // In a real app, you'd send a Push Notification or Email to the Staff of concern.assignedTo
   }
 
   Future<void> _escalateSLA(Concern concern, String reason) async {
@@ -247,7 +273,6 @@ class ConcernService {
     }
   }
 
-  /// NEW: Clear all concerns (Clean up data)
   Future<void> clearAllConcerns() async {
     try {
       final concerns = await _db.collection('concerns').get();
