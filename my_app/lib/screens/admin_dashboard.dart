@@ -167,11 +167,10 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> with SingleTick
             if (_selectedDate != null)
               Padding(
                 padding: const EdgeInsets.only(top: 8.0),
-                child: Chip(
+                child: ActionChip(
                   label: Text('Filter: ${DateFormat('MMM dd, yyyy').format(_selectedDate!)}', style: const TextStyle(fontSize: 11)),
-                  onDeleted: () => setState(() => _selectedDate = null),
+                  onPressed: () {}, 
                   backgroundColor: Colors.indigo.withOpacity(0.1),
-                  deleteIcon: const Icon(Icons.close, size: 14),
                 ),
               ),
             const SizedBox(height: 24),
@@ -257,16 +256,22 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> with SingleTick
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              _aiStat('HIGH RISK', '$critical', Colors.redAccent),
-              _aiStat('AT RISK', '$high', Colors.orangeAccent),
-              _aiStat('CONFIDENCE', '94%', Colors.blueAccent),
+              // HIGH RISK CLICKABLE
+              _aiStat('HIGH RISK', '$critical', Colors.redAccent, () {
+                Navigator.push(context, MaterialPageRoute(builder: (context) => const AdminConcernList(filterHighRiskOnly: true)));
+              }),
+              // AT RISK CLICKABLE
+              _aiStat('AT RISK', '$high', Colors.orangeAccent, () {
+                Navigator.push(context, MaterialPageRoute(builder: (context) => const AdminConcernList(filterAtRiskOnly: true)));
+              }),
+              _aiStat('CONFIDENCE', '94%', Colors.blueAccent, null),
             ],
           ),
           const Divider(height: 40, color: Colors.white12),
           Text(
             critical > 0 
-              ? 'AI ADVICE: $critical tickets breached SLA. Immediate action on Escalated queue is recommended.' 
-              : 'AI ANALYSIS: Performance is optimal. No critical anomalies detected for the selected period.',
+              ? 'AI ADVICE: $critical tickets breached SLA. Click HIGH RISK to address them now.' 
+              : 'AI ANALYSIS: System performance is nominal. Click any metric to view details.',
             style: const TextStyle(color: Colors.white70, fontSize: 12, fontStyle: FontStyle.italic),
           ),
         ],
@@ -274,13 +279,20 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> with SingleTick
     );
   }
 
-  Widget _aiStat(String label, String value, Color color) {
-    return Column(
-      children: [
-        Text(value, style: TextStyle(color: color, fontSize: 20, fontWeight: FontWeight.w900)),
-        const SizedBox(height: 4),
-        Text(label, style: const TextStyle(color: Colors.white30, fontSize: 9, fontWeight: FontWeight.bold)),
-      ],
+  Widget _aiStat(String label, String value, Color color, VoidCallback? onTap) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Column(
+          children: [
+            Text(value, style: TextStyle(color: color, fontSize: 24, fontWeight: FontWeight.w900)),
+            const SizedBox(height: 4),
+            Text(label, style: const TextStyle(color: Colors.white30, fontSize: 9, fontWeight: FontWeight.bold)),
+          ],
+        ),
+      ),
     );
   }
 

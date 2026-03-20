@@ -151,7 +151,7 @@ class ConcernService {
         // 2. WARNING: 24 Hours Breach -> ALERT ADMIN
         if ((concern.status == ConcernStatus.submitted || concern.status == ConcernStatus.routed) && 
             hoursSinceCreation >= 24) {
-          await _alertAdminSLA(concern, 'SLA WARNING: Concern unread for > 24h. Please review immediately.');
+          await _alertAdminSLA(concern, 'SLA WARNING: Concern unread for > 24h. Immediate review required.');
           continue;
         }
 
@@ -169,7 +169,7 @@ class ConcernService {
   }
 
   Future<void> _alertAdminSLA(Concern concern, String message) async {
-    // This logic prevents duplicate logs for the same warning
+    // Log the warning for analytics
     await _logAction(
       concernId: concern.id,
       actorId: 'SYSTEM_SLA_WATCH',
@@ -177,9 +177,18 @@ class ConcernService {
       details: message,
     );
     
-    // Notify the staff assigned to this department
-    debugPrint("NOTIFY ADMIN: Concern ${concern.id} is AT RISK.");
-    // In a real app, you'd send a Push Notification or Email to the Staff of concern.assignedTo
+    // 1. In-App Notification
+    _notifications.sendAdminAlert(
+      title: 'Urgently Needed: SLA Warning',
+      body: 'Case ${concern.id.substring(0, 8).toUpperCase()} has been unread for 24h. Assigned to: ${concern.assignedTo}'
+    );
+
+    // 2. Email Notification Simulation
+    _notifications.sendEmail(
+      to: 'admin@concerntrack.edu.ph',
+      subject: '[SLA WARNING] Priority Action Required',
+      body: 'Concern "${concern.title}" has been unread for 24 hours and is nearing escalation. Please review it immediately.',
+    );
   }
 
   Future<void> _escalateSLA(Concern concern, String reason) async {
@@ -202,6 +211,18 @@ class ConcernService {
           concern.studentId,
           concern.title,
           'URGENT: Your concern has been auto-escalated due to delayed processing.'
+      );
+
+      // Email Alert for Escalation
+      _notifications.sendEmail(
+        to: 'admin@concerntrack.edu.ph',
+        subject: '[SLA BREACH] Case Auto-Escalated',
+        body: 'Case ${concern.id.substring(0, 8).toUpperCase()} was escalated because it exceeded the 48-hour routing limit.',
+      );
+
+      _notifications.sendAdminAlert(
+        title: 'SLA BREACH: Case Escalated',
+        body: 'Case ${concern.id.substring(0, 8).toUpperCase()} has exceeded 48h and was auto-escalated.'
       );
     } catch (e) {
       debugPrint("Escalation error: $e");

@@ -11,8 +11,16 @@ import 'package:intl/intl.dart';
 class AdminConcernList extends ConsumerStatefulWidget {
   final ConcernStatus? initialFilter;
   final bool? filterActiveOnly;
+  final bool? filterHighRiskOnly; 
+  final bool? filterAtRiskOnly;
 
-  const AdminConcernList({super.key, this.initialFilter, this.filterActiveOnly});
+  const AdminConcernList({
+    super.key, 
+    this.initialFilter, 
+    this.filterActiveOnly,
+    this.filterHighRiskOnly,
+    this.filterAtRiskOnly,
+  });
 
   @override
   ConsumerState<AdminConcernList> createState() => _AdminConcernListState();
@@ -26,15 +34,18 @@ class _AdminConcernListState extends ConsumerState<AdminConcernList> {
   DateTime? _selectedDate;
   String _searchQuery = "";
   bool _showActiveOnly = false;
+  bool _showHighRiskOnly = false;
+  bool _showAtRiskOnly = false;
 
   @override
   void initState() {
     super.initState();
     _filterStatus = widget.initialFilter;
     _showActiveOnly = widget.filterActiveOnly ?? false;
+    _showHighRiskOnly = widget.filterHighRiskOnly ?? false;
+    _showAtRiskOnly = widget.filterAtRiskOnly ?? false;
   }
 
-  // Consistent Floating Calendar Picker
   void _showFloatingCalendar() {
     showDialog(
       context: context,
@@ -100,6 +111,14 @@ class _AdminConcernListState extends ConsumerState<AdminConcernList> {
                         children: [
                           Text('Showing ${filtered.length} records', 
                             style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.blueGrey)),
+                          if (_showHighRiskOnly) ...[
+                            const SizedBox(width: 8),
+                            _riskChip('HIGH RISK (SLA)', Colors.red, () => setState(() => _showHighRiskOnly = false)),
+                          ],
+                          if (_showAtRiskOnly) ...[
+                            const SizedBox(width: 8),
+                            _riskChip('AT RISK (SLA)', Colors.orange, () => setState(() => _showAtRiskOnly = false)),
+                          ],
                           if (_selectedDate != null) ...[
                             const SizedBox(width: 8),
                             Chip(
@@ -134,6 +153,53 @@ class _AdminConcernListState extends ConsumerState<AdminConcernList> {
         ],
       ),
     );
+  }
+
+  Widget _riskChip(String label, Color color, VoidCallback onDeleted) {
+    return Chip(
+      label: Text(label, style: const TextStyle(fontSize: 9, color: Colors.white, fontWeight: FontWeight.bold)),
+      backgroundColor: color,
+      onDeleted: onDeleted,
+      deleteIcon: const Icon(Icons.close, size: 14, color: Colors.white),
+      visualDensity: VisualDensity.compact,
+      padding: EdgeInsets.zero,
+    );
+  }
+
+  List<Concern> _applyFilters(List<Concern> list) {
+    var filtered = list;
+    final now = DateTime.now();
+
+    if (_showHighRiskOnly) {
+      filtered = filtered.where((c) => 
+        c.status != ConcernStatus.resolved && now.difference(c.createdAt).inHours > 48
+      ).toList();
+    } else if (_showAtRiskOnly) {
+      filtered = filtered.where((c) => 
+        c.status != ConcernStatus.resolved && 
+        now.difference(c.createdAt).inHours > 24 && 
+        now.difference(c.createdAt).inHours <= 48
+      ).toList();
+    }
+
+    if (_selectedDate != null) {
+      filtered = filtered.where((c) => 
+        c.createdAt.year == _selectedDate!.year && 
+        c.createdAt.month == _selectedDate!.month && 
+        c.createdAt.day == _selectedDate!.day
+      ).toList();
+    }
+    if (_searchQuery.isNotEmpty) {
+      filtered = filtered.where((c) => 
+        c.studentName.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+        c.id.toLowerCase().contains(_searchQuery.toLowerCase())
+      ).toList();
+    }
+    if (_filterDept != null) filtered = filtered.where((c) => c.department == _filterDept).toList();
+    if (_filterOffice != null) filtered = filtered.where((c) => c.assignedTo == _filterOffice).toList();
+    if (_filterStatus != null) filtered = filtered.where((c) => c.status == _filterStatus).toList();
+    if (_showActiveOnly) filtered = filtered.where((c) => c.status != ConcernStatus.resolved).toList();
+    return filtered;
   }
 
   Widget _buildTopFilterSection(List<Concern> allConcerns) {
@@ -178,7 +244,6 @@ class _AdminConcernListState extends ConsumerState<AdminConcernList> {
                 ),
               ),
               const SizedBox(width: 12),
-              // THE FLOATING CALENDAR BUTTON
               IconButton(
                 onPressed: _showFloatingCalendar,
                 icon: Icon(Icons.calendar_month, color: _selectedDate != null ? Colors.indigo : Colors.grey),
@@ -207,28 +272,6 @@ class _AdminConcernListState extends ConsumerState<AdminConcernList> {
     );
   }
 
-  List<Concern> _applyFilters(List<Concern> list) {
-    var filtered = list;
-    if (_selectedDate != null) {
-      filtered = filtered.where((c) => 
-        c.createdAt.year == _selectedDate!.year && 
-        c.createdAt.month == _selectedDate!.month && 
-        c.createdAt.day == _selectedDate!.day
-      ).toList();
-    }
-    if (_searchQuery.isNotEmpty) {
-      filtered = filtered.where((c) => 
-        c.studentName.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-        c.id.toLowerCase().contains(_searchQuery.toLowerCase())
-      ).toList();
-    }
-    if (_filterDept != null) filtered = filtered.where((c) => c.department == _filterDept).toList();
-    if (_filterOffice != null) filtered = filtered.where((c) => c.assignedTo == _filterOffice).toList();
-    if (_filterStatus != null) filtered = filtered.where((c) => c.status == _filterStatus).toList();
-    if (_showActiveOnly) filtered = filtered.where((c) => c.status != ConcernStatus.resolved).toList();
-    return filtered;
-  }
-
   Widget _buildProfessionalTable(List<Concern> concerns) {
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
@@ -240,6 +283,8 @@ class _AdminConcernListState extends ConsumerState<AdminConcernList> {
           DataColumn(label: Text('#', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
           DataColumn(label: Text('REFERENCE', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
           DataColumn(label: Text('STUDENT', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
+          DataColumn(label: Text('OFFICE', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
+          DataColumn(label: Text('SUBMITTED', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
           DataColumn(label: Text('STATUS', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
           DataColumn(label: Text('ACTION', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold))),
         ],
@@ -260,6 +305,8 @@ class _AdminConcernListState extends ConsumerState<AdminConcernList> {
           Text(c.department, style: const TextStyle(fontSize: 10, color: Colors.grey)),
         ],
       )),
+      DataCell(Text(c.assignedTo ?? 'UNASSIGNED', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Color(0xFF64748B)))),
+      DataCell(Text(DateFormat('MMM dd').format(c.createdAt), style: const TextStyle(fontSize: 10, color: Colors.blueGrey))),
       DataCell(_statusBadge(c.status)),
       DataCell(IconButton(
         icon: const Icon(Icons.arrow_forward_rounded, color: Colors.indigo, size: 18),
@@ -281,7 +328,7 @@ class _AdminConcernListState extends ConsumerState<AdminConcernList> {
             child: DropdownButton<String>(
               value: value,
               isExpanded: true,
-              hint: Text('All $label', style: const TextStyle(fontSize: 10)),
+              hint: Text('All $label', style: const TextStyle(fontSize: 9)),
               style: const TextStyle(fontSize: 10, color: Colors.black, fontWeight: FontWeight.w600),
               items: [
                 DropdownMenuItem(value: null, child: Text('All $label')),
