@@ -1,11 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-
 enum ConcernCategory { academic, financial, welfare }
 
-
 enum ConcernStatus { submitted, routed, read, screened, resolved, escalated }
-
 
 class Concern {
   final String id;
@@ -22,7 +19,8 @@ class Concern {
   final List<String> attachments;
   final String? assignedTo;
   final String program;
-
+  final bool isPublic;
+  final String? resolutionMessage; // NEW: Official Answer for Knowledge Base
 
   Concern({
     required this.id,
@@ -39,8 +37,9 @@ class Concern {
     required this.attachments,
     this.assignedTo,
     required this.program,
+    this.isPublic = false,
+    this.resolutionMessage,
   });
-
 
   Map<String, dynamic> toMap() {
     return {
@@ -58,9 +57,10 @@ class Concern {
       'attachments': attachments,
       'assignedTo': assignedTo,
       'program': program,
+      'isPublic': isPublic,
+      'resolutionMessage': resolutionMessage,
     };
   }
-
 
   factory Concern.fromMap(Map<String, dynamic> map, String id) {
     return Concern(
@@ -78,9 +78,10 @@ class Concern {
       attachments: List<String>.from(map['attachments'] ?? []),
       assignedTo: map['assignedTo'],
       program: map['program'] ?? '',
+      isPublic: map['isPublic'] ?? false,
+      resolutionMessage: map['resolutionMessage'],
     );
   }
-
 
   Concern copyWith({
     String? id,
@@ -97,6 +98,8 @@ class Concern {
     List<String>? attachments,
     String? assignedTo,
     String? program,
+    bool? isPublic,
+    String? resolutionMessage,
   }) {
     return Concern(
       id: id ?? this.id,
@@ -113,6 +116,8 @@ class Concern {
       attachments: attachments ?? this.attachments,
       assignedTo: assignedTo ?? this.assignedTo,
       program: program ?? this.program,
+      isPublic: isPublic ?? this.isPublic,
+      resolutionMessage: resolutionMessage ?? this.resolutionMessage,
     );
   }
 }

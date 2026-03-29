@@ -5,6 +5,7 @@ import '../models/concern.dart';
 import '../services/concern_service.dart';
 import '../services/providers.dart';
 import 'concern_detail_screen.dart';
+import 'ai_chat_screen.dart';
 
 
 final studentConcernsProvider = StreamProvider.family<List<Concern>, String>((ref, studentId) {
@@ -97,6 +98,18 @@ class StudentDashboard extends ConsumerWidget {
         ),
         loading: () => const Center(child: CircularProgressIndicator(color: Colors.red)),
         error: (err, stack) => Center(child: Text('Error: $err')),
+      ),
+      // ADDING THE GRC AI FLOATING BUTTON HERE
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const AIChatScreen()),
+          );
+        },
+        backgroundColor: Colors.red,
+        icon: const Icon(Icons.auto_awesome, color: Colors.amber),
+        label: const Text('Ask GRC AI', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
       ),
     );
   }

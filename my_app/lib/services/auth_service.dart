@@ -10,10 +10,6 @@ class AuthService {
 
   Future<Map<String, String>?> login(String email, String password, String expectedRole) async {
     try {
-      // For real Firebase Auth integration:
-      // UserCredential result = await _auth.signInWithEmailAndPassword(email: email, password: password);
-      // But keeping your custom Firestore-based login logic for consistency with your previous data
-      
       final query = await _db.collection('users')
           .where('email', isEqualTo: email.toLowerCase())
           .where('role', isEqualTo: expectedRole)
@@ -30,17 +26,32 @@ class AuthService {
         }
       }
       
-      // Demo Fallback Accounts (Para sa Defense)
+      // Fallback for Demo Accounts: Auto-create in Firestore if they don't exist
       if (expectedRole == 'admin' && email == 'admin@test.com' && password == 'admin123') {
+        await _ensureUserExists('admin_user', email, 'Admin Staff', 'admin');
         return {'id': 'admin_user', 'role': 'admin', 'name': 'Admin Staff'};
       }
       if (expectedRole == 'student' && email == 'student@test.com' && password == 'student123') {
+        await _ensureUserExists('student_123', email, 'Juan Dela Cruz', 'student');
         return {'id': 'student_123', 'role': 'student', 'name': 'Juan Dela Cruz'};
       }
     } catch (e) {
       return null;
     }
     return null;
+  }
+
+  Future<void> _ensureUserExists(String id, String email, String name, String role) async {
+    final doc = await _db.collection('users').doc(id).get();
+    if (!doc.exists) {
+      await _db.collection('users').doc(id).set({
+        'email': email.toLowerCase(),
+        'password': role == 'admin' ? 'admin123' : 'student123',
+        'name': name,
+        'role': role,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+    }
   }
 
   Future<bool> registerStudent({
@@ -50,10 +61,9 @@ class AuthService {
     required String studentId,
   }) async {
     try {
-      // 1. Create in Firestore users collection
       await _db.collection('users').doc(studentId).set({
         'email': email.toLowerCase(),
-        'password': password, // Note: In production, never store plain text passwords
+        'password': password,
         'name': name,
         'role': 'student',
         'createdAt': FieldValue.serverTimestamp(),
@@ -66,12 +76,9 @@ class AuthService {
 
   Future<bool> resetPassword(String email) async {
     try {
-      // This sends a real Firebase password reset email if the user exists in Firebase Auth
-      // For your custom Firestore setup, we can just simulate it or check if email exists
       final query = await _db.collection('users')
           .where('email', isEqualTo: email.toLowerCase())
           .get();
-      
       return query.docs.isNotEmpty;
     } catch (e) {
       return false;

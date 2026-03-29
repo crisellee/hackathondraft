@@ -14,7 +14,20 @@ class ConcernService {
   final NotificationService _notifications = NotificationService();
   final _uuid = const Uuid();
 
+  // LIMIT: Maximum of 3 active (unresolved) concerns per student
+  static const int maxActiveConcerns = 3;
+
   Future<void> submitConcern(Concern concern) async {
+    // Check for active concerns before submitting
+    final activeConcerns = await _db.collection('concerns')
+        .where('studentId', isEqualTo: concern.studentId)
+        .where('status', isNotEqualTo: ConcernStatus.resolved.name)
+        .get();
+
+    if (activeConcerns.docs.length >= maxActiveConcerns) {
+      throw Exception('You have reached the limit of $maxActiveConcerns active concerns. Please wait for them to be resolved.');
+    }
+
     final docRef = _db.collection('concerns').doc(concern.id);
 
     try {
@@ -36,6 +49,7 @@ class ConcernService {
       await _executeAutoRouting(concern);
     } catch (e) {
       debugPrint("Firestore Submit Error: $e");
+      rethrow;
     }
   }
 
@@ -100,9 +114,20 @@ class ConcernService {
     try {
       final doc = await _db.collection('concerns').doc(id).get();
       if (!doc.exists) return;
+      
       final concern = Concern.fromMap(doc.data()!, doc.id);
+      
+      if (concern.status == status) return;
 
-      final updates = {
+      // WORKFLOW ENFORCEMENT: 
+      // Cannot jump from 'Submitted/Routed' directly to 'Resolved' 
+      // without being 'Read' or 'Screened' (Investigations take time!)
+      if (status == ConcernStatus.resolved && 
+          (concern.status == ConcernStatus.submitted || concern.status == ConcernStatus.routed)) {
+        throw Exception('This concern must be reviewed/read first before it can be resolved.');
+      }
+
+      final updates = <String, dynamic>{
         'status': status.name,
         'lastUpdatedAt': FieldValue.serverTimestamp(),
       };
@@ -126,10 +151,28 @@ class ConcernService {
       );
     } catch (e) {
       debugPrint("Status update error: $e");
+      rethrow;
     }
   }
 
-  /// Proactive SLA Enforcement with Warning System
+  Future<void> togglePublicStatus(String id, bool isPublic, String actorId) async {
+    try {
+      await _db.collection('concerns').doc(id).update({
+        'isPublic': isPublic,
+        'lastUpdatedAt': FieldValue.serverTimestamp(),
+      });
+
+      await _logAction(
+        concernId: id,
+        actorId: actorId,
+        action: 'KNOWLEDGE_BASE_UPDATE',
+        details: isPublic ? 'Published to community knowledge base.' : 'Removed from community knowledge base.',
+      );
+    } catch (e) {
+      debugPrint("Toggle public status error: $e");
+    }
+  }
+
   Future<void> enforceSLA() async {
     final now = DateTime.now();
     try {
@@ -141,21 +184,18 @@ class ConcernService {
 
         final hoursSinceCreation = now.difference(concern.createdAt).inHours;
 
-        // 1. CRITICAL: 48 Hours Breach -> AUTO ESCALATE
         if ((concern.status == ConcernStatus.submitted || concern.status == ConcernStatus.routed) && 
             hoursSinceCreation >= 48) {
           await _escalateSLA(concern, 'SLA BREACH: Overdue for routing (> 48h).');
           continue;
         }
 
-        // 2. WARNING: 24 Hours Breach -> ALERT ADMIN
         if ((concern.status == ConcernStatus.submitted || concern.status == ConcernStatus.routed) && 
             hoursSinceCreation >= 24) {
           await _alertAdminSLA(concern, 'SLA WARNING: Concern unread for > 24h. Immediate review required.');
           continue;
         }
 
-        // 3. STAGNANT READ: 5 Days after read
         if (concern.status == ConcernStatus.read) {
           final lastUpdate = concern.lastUpdatedAt ?? concern.createdAt;
           if (now.difference(lastUpdate).inDays >= 5) {
@@ -169,7 +209,6 @@ class ConcernService {
   }
 
   Future<void> _alertAdminSLA(Concern concern, String message) async {
-    // Log the warning for analytics
     await _logAction(
       concernId: concern.id,
       actorId: 'SYSTEM_SLA_WATCH',
@@ -177,13 +216,11 @@ class ConcernService {
       details: message,
     );
     
-    // 1. In-App Notification
     _notifications.sendAdminAlert(
       title: 'Urgently Needed: SLA Warning',
       body: 'Case ${concern.id.substring(0, 8).toUpperCase()} has been unread for 24h. Assigned to: ${concern.assignedTo}'
     );
 
-    // 2. Email Notification Simulation
     _notifications.sendEmail(
       to: 'admin@concerntrack.edu.ph',
       subject: '[SLA WARNING] Priority Action Required',
@@ -213,7 +250,6 @@ class ConcernService {
           'URGENT: Your concern has been auto-escalated due to delayed processing.'
       );
 
-      // Email Alert for Escalation
       _notifications.sendEmail(
         to: 'admin@concerntrack.edu.ph',
         subject: '[SLA BREACH] Case Auto-Escalated',
@@ -253,6 +289,18 @@ class ConcernService {
       list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
       return list;
     });
+  }
+
+  Stream<List<Concern>> getPublicConcerns() {
+    return _db.collection('concerns')
+        .where('isPublic', isEqualTo: true)
+        .where('status', isEqualTo: ConcernStatus.resolved.name)
+        .snapshots()
+        .map((snapshot) {
+          final list = snapshot.docs.map((doc) => Concern.fromMap(doc.data(), doc.id)).toList();
+          list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+          return list;
+        });
   }
 
   Stream<List<Concern>> getConcernsByStudent(String studentId) {

@@ -7,7 +7,6 @@ import '../services/concern_service.dart';
 import '../services/report_service.dart';
 import '../services/providers.dart';
 import 'admin_concern_list.dart';
-import 'login_screen.dart';
 import 'package:intl/intl.dart';
 
 class AdminDashboard extends ConsumerStatefulWidget {
@@ -80,13 +79,11 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> with SingleTick
 
   @override
   Widget build(BuildContext context) {
-    final role = ref.watch(userRoleProvider);
     final concernsAsync = ref.watch(allConcernsProvider);
-
-    if (role != 'admin') return const Scaffold(body: Center(child: Text('Unauthorized')));
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: _buildAppBar(context, ref, concernsAsync),
       body: concernsAsync.when(
         data: (concerns) {
@@ -98,9 +95,9 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> with SingleTick
               c.createdAt.day == _selectedDate!.day
             ).toList();
           }
-          return _buildProfessionalUI(context, displayData);
+          return _buildProfessionalUI(context, displayData, isDark);
         },
-        loading: () => const Center(child: CircularProgressIndicator(color: Colors.indigo)),
+        loading: () => const Center(child: CircularProgressIndicator(color: Colors.red)),
         error: (err, _) => Center(child: Text('Error: $err')),
       ),
     );
@@ -115,12 +112,11 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> with SingleTick
           _buildLiveBadge(),
         ],
       ),
-      backgroundColor: Colors.white,
-      foregroundColor: const Color(0xFF1E293B),
+      backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
       elevation: 0,
       actions: [
         IconButton(
-          icon: Icon(Icons.calendar_month, color: _selectedDate != null ? Colors.indigo : Colors.grey),
+          icon: Icon(Icons.calendar_month, color: _selectedDate != null ? Colors.red : Colors.grey),
           onPressed: _showFloatingCalendar,
         ),
         _buildSettingsMenu(concernsAsync),
@@ -150,7 +146,7 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> with SingleTick
     );
   }
 
-  Widget _buildProfessionalUI(BuildContext context, List<Concern> displayData) {
+  Widget _buildProfessionalUI(BuildContext context, List<Concern> displayData, bool isDark) {
     final resolved = displayData.where((c) => c.status == ConcernStatus.resolved).length;
     final active = displayData.length - resolved;
     final escalated = displayData.where((c) => c.status == ConcernStatus.escalated).length;
@@ -163,27 +159,27 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> with SingleTick
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildHeader(),
+            _buildHeader(isDark),
             if (_selectedDate != null)
               Padding(
                 padding: const EdgeInsets.only(top: 8.0),
                 child: ActionChip(
                   label: Text('Filter: ${DateFormat('MMM dd, yyyy').format(_selectedDate!)}', style: const TextStyle(fontSize: 11)),
                   onPressed: () {}, 
-                  backgroundColor: Colors.indigo.withOpacity(0.1),
+                  backgroundColor: Colors.red.withOpacity(0.1),
                 ),
               ),
             const SizedBox(height: 24),
             
             Row(
               children: [
-                _kpiCard(context, 'TOTAL', displayData.length.toString(), Icons.analytics, Colors.indigo, () {
+                _kpiCard(context, 'TOTAL', displayData.length.toString(), Icons.analytics, Colors.red, () {
                   Navigator.push(context, MaterialPageRoute(builder: (context) => const AdminConcernList()));
                 }),
                 _kpiCard(context, 'ACTIVE', active.toString(), Icons.pending, Colors.blue, () {
                   Navigator.push(context, MaterialPageRoute(builder: (context) => const AdminConcernList(filterActiveOnly: true)));
                 }),
-                _kpiCard(context, 'ESCALATED', escalated.toString(), Icons.warning, Colors.red, () {
+                _kpiCard(context, 'ESCALATED', escalated.toString(), Icons.warning, Colors.orange, () {
                   Navigator.push(context, MaterialPageRoute(builder: (context) => const AdminConcernList(initialFilter: ConcernStatus.escalated)));
                 }),
                 _kpiCard(context, 'RESOLVED', resolved.toString(), Icons.check_circle, Colors.green, () {
@@ -196,14 +192,14 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> with SingleTick
             _buildAIHub(context, displayData),
             const SizedBox(height: 24),
 
-            _chartCard('SYSTEM ACTIVITY TRENDS', _buildTrendGraph(displayData)),
+            _chartCard('SYSTEM ACTIVITY TRENDS', _buildTrendGraph(displayData, isDark), isDark),
             const SizedBox(height: 20),
             
             Row(
               children: [
-                Expanded(child: _chartCard('CATEGORY MIX', _buildCategoryChart(displayData))),
+                Expanded(child: _chartCard('CATEGORY MIX', _buildCategoryChart(displayData), isDark)),
                 const SizedBox(width: 16),
-                Expanded(child: _chartCard('STATUS FLOW', _buildStatusChart(displayData))),
+                Expanded(child: _chartCard('STATUS FLOW', _buildStatusChart(displayData), isDark)),
               ],
             ),
             const SizedBox(height: 40),
@@ -213,17 +209,21 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> with SingleTick
     );
   }
 
-  Widget _buildHeader() {
+  Widget _buildHeader(bool isDark) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           DateFormat('EEEE, MMMM d, yyyy').format(DateTime.now()).toUpperCase(),
-          style: const TextStyle(color: Colors.indigo, fontWeight: FontWeight.bold, fontSize: 10, letterSpacing: 2),
+          style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 10, letterSpacing: 2),
         ),
-        const Text(
+        Text(
           'Operational Console',
-          style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: Color(0xFF0F172A)),
+          style: TextStyle(
+            fontSize: 24, 
+            fontWeight: FontWeight.w900, 
+            color: isDark ? Colors.white : const Color(0xFF0F172A)
+          ),
         ),
       ],
     );
@@ -237,9 +237,9 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> with SingleTick
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: const Color(0xFF0F172A),
+        color: const Color(0xFF1E293B), // Dark card background always
         borderRadius: BorderRadius.circular(24),
-        boxShadow: [BoxShadow(color: Colors.indigo.withOpacity(0.3), blurRadius: 20, offset: const Offset(0, 10))],
+        boxShadow: [BoxShadow(color: Colors.red.withOpacity(0.2), blurRadius: 20, offset: const Offset(0, 10))],
       ),
       child: Column(
         children: [
@@ -256,11 +256,9 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> with SingleTick
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              // HIGH RISK CLICKABLE
               _aiStat('HIGH RISK', '$critical', Colors.redAccent, () {
                 Navigator.push(context, MaterialPageRoute(builder: (context) => const AdminConcernList(filterHighRiskOnly: true)));
               }),
-              // AT RISK CLICKABLE
               _aiStat('AT RISK', '$high', Colors.orangeAccent, () {
                 Navigator.push(context, MaterialPageRoute(builder: (context) => const AdminConcernList(filterAtRiskOnly: true)));
               }),
@@ -297,6 +295,7 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> with SingleTick
   }
 
   Widget _kpiCard(BuildContext context, String title, String value, IconData icon, Color color, VoidCallback onTap) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Expanded(
       child: InkWell(
         onTap: onTap,
@@ -305,16 +304,16 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> with SingleTick
           margin: const EdgeInsets.only(right: 8),
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: isDark ? const Color(0xFF1E293B) : Colors.white,
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: const Color(0xFFF1F5F9)),
+            border: Border.all(color: isDark ? Colors.white10 : const Color(0xFFF1F5F9)),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Icon(icon, color: color, size: 18),
               const SizedBox(height: 12),
-              Text(value, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Color(0xFF1E293B))),
+              Text(value, style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: isDark ? Colors.white : const Color(0xFF1E293B))),
               Text(title, style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.blueGrey)),
             ],
           ),
@@ -323,18 +322,18 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> with SingleTick
     );
   }
 
-  Widget _chartCard(String title, Widget chart) {
+  Widget _chartCard(String title, Widget chart, bool isDark) {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: isDark ? const Color(0xFF1E293B) : Colors.white,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: isDark ? Colors.white10 : const Color(0xFFE2E8F0)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Color(0xFF64748B), letterSpacing: 1)),
+          Text(title, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: isDark ? Colors.white60 : const Color(0xFF64748B), letterSpacing: 1)),
           const SizedBox(height: 20),
           SizedBox(height: 180, child: chart),
         ],
@@ -342,7 +341,7 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> with SingleTick
     );
   }
 
-  Widget _buildTrendGraph(List<Concern> concerns) {
+  Widget _buildTrendGraph(List<Concern> concerns, bool isDark) {
     final now = DateTime.now();
     final last7Days = List.generate(7, (i) => DateTime(now.year, now.month, now.day).subtract(Duration(days: 6 - i)));
     final spots = last7Days.asMap().entries.map((e) {
@@ -359,11 +358,11 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> with SingleTick
           LineChartBarData(
             spots: spots,
             isCurved: true,
-            color: Colors.indigo,
+            color: Colors.red,
             barWidth: 4,
             isStrokeCapRound: true,
             dotData: const FlDotData(show: false),
-            belowBarData: BarAreaData(show: true, color: Colors.indigo.withOpacity(0.05)),
+            belowBarData: BarAreaData(show: true, color: Colors.red.withOpacity(0.05)),
           ),
         ],
       ),
@@ -374,7 +373,7 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> with SingleTick
     return PieChart(PieChartData(sectionsSpace: 0, centerSpaceRadius: 25, sections: [
        PieChartSectionData(color: Colors.red, value: concerns.where((c) => c.category == ConcernCategory.academic).length.toDouble(), radius: 30, showTitle: false),
        PieChartSectionData(color: Colors.orange, value: concerns.where((c) => c.category == ConcernCategory.financial).length.toDouble(), radius: 30, showTitle: false),
-       PieChartSectionData(color: Colors.pink, value: concerns.where((c) => c.category == ConcernCategory.welfare).length.toDouble(), radius: 30, showTitle: false),
+       PieChartSectionData(color: Colors.blue, value: concerns.where((c) => c.category == ConcernCategory.welfare).length.toDouble(), radius: 30, showTitle: false),
     ]));
   }
 

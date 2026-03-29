@@ -1,40 +1,50 @@
 plugins {
     id("com.android.application")
     id("kotlin-android")
-    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
+    // Ang Flutter Gradle Plugin ay dapat laging huli sa listahang ito.
     id("dev.flutter.flutter-gradle-plugin")
 }
 
 android {
+    // Siguraduhing tugma ito sa package name mo sa pubspec.yaml
     namespace = "com.example.my_app"
-    compileSdk = flutter.compileSdkVersion
+
+    // In-set sa 36 para sa compatibility ng google_sign_in at iba pang plugins
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
+        // Ginawang Java 17 para sa modernong Gradle at Android SDK 36
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
 
     kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_17.toString()
+        // Direct string na "17" para iwas sa error sa compilation
+        jvmTarget = "17"
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.example.my_app"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
+
+        // MinSdk 21 ay standard para sa karamihan ng devices ngayon
+        minSdk = 21
+
+        // Dapat laging match sa compileSdk
+        targetSdk = 36
+
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
 
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
+            // Debug keys muna para hindi mag-error sa signing habang nag-e-experiment
             signingConfig = signingConfigs.getByName("debug")
+
+            // Naka-false muna para iwas sa AAPT2 compilation errors sa resources
+            isMinifyEnabled = false
+            isShrinkResources = false
         }
     }
 }

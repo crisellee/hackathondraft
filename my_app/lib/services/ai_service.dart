@@ -7,7 +7,7 @@ class AIService {
   /// Simulates AI-powered Auto-Routing / Categorization
   Future<Map<String, dynamic>> analyzeConcern(String description) async {
     // Simulate network delay
-    await Future.delayed(const Duration(seconds: 1));
+    await Future.delayed(const Duration(milliseconds: 800));
 
     final text = description.toLowerCase();
     
@@ -15,52 +15,49 @@ class AIService {
     String targetOffice = "DEAN'S OFFICE";
     int score = 0;
 
-    // Keywords (expanded + Tagalog support)
+    // Keywords updated based on user requirements
     final financialKeywords = [
-      'tuition', 'refund', 'payment', 'balance', 'fee', 'bayad', 'pondo'
+      'tuition', 'refund', 'payment', 'balance', 'fee', 'bayad', 'pondo', 'billing', 'account'
     ];
 
     final welfareKeywords = [
-      'mental', 'health', 'bullying', 'guidance', 'stress', 'harassment', 'uniform', 'id', 'scholar', 'scholarship'
+      'id', 'id replacement', 'lost id', 'id card', 'uniform', 'dress code', 
+      'scholar', 'scholarship', 'tes', 'tdp', 'mental', 'guidance', 'osa', 'student affairs'
     ];
 
     final academicKeywords = [
-      'grade', 'subject', 'professor', 'exam', 'schedule', 'class', 'marka', 'guro', 'dean\'s lister', 'dl', 'lister'
+      'grade', 'grades', 'marka', 'equivalent', 'crediting', 'tor', 'transcript', 
+      'shifting', 'overload', 'subject', 'professor', 'dean', 'dean\'s lister', 'dl'
     ];
 
-    // Priority system (Financial > Welfare > Academic)
-    for (var word in financialKeywords) {
-      if (text.contains(word)) {
-        category = ConcernCategory.financial;
-        targetOffice = "FINANCE OFFICE";
-        score++;
-      }
+    // ROUTING LOGIC WITH SPECIFIC PRIORITY
+    bool isFinancial = financialKeywords.any((word) => text.contains(word));
+    bool isWelfare = welfareKeywords.any((word) => text.contains(word));
+    bool isAcademic = academicKeywords.any((word) => text.contains(word));
+
+    // Priority: ID/Welfare > Financial > Academic
+    if (isWelfare) {
+      category = ConcernCategory.welfare;
+      targetOffice = "STUDENT AFFAIRS";
+      score = 2;
+    } else if (isFinancial) {
+      category = ConcernCategory.financial;
+      targetOffice = "FINANCE OFFICE";
+      score = 2;
+    } else if (isAcademic) {
+      category = ConcernCategory.academic;
+      targetOffice = "DEAN'S OFFICE";
+      score = 2;
     }
 
-    for (var word in welfareKeywords) {
-      if (text.contains(word)) {
-        category = ConcernCategory.welfare;
-        targetOffice = "STUDENT AFFAIRS";
-        score++;
-      }
-    }
-
-    for (var word in academicKeywords) {
-      if (text.contains(word)) {
-        category = ConcernCategory.academic;
-        targetOffice = "DEAN'S OFFICE";
-        score++;
-      }
-    }
-
-    // Dynamic confidence
-    String confidence = "${70 + (score * 5)}%";
+    // Dynamic confidence based on keyword matches
+    String confidence = score > 0 ? "92%" : "65%";
 
     return {
       'category': category,
-      'department': targetOffice, // This maps to assignedTo in concern_service
+      'department': targetOffice,
       'confidence': confidence,
-      'ai_summary': 'Automatically identified as ${category.name.toUpperCase()} for $targetOffice based on detected keywords.'
+      'ai_summary': 'Automatically routed to $targetOffice based on concern content analysis.'
     };
   }
 
@@ -71,31 +68,27 @@ class AIService {
 
     if (concern.status == ConcernStatus.resolved) return 'Low (Resolved)';
 
-    if (hoursOpen > 48 && concern.status == ConcernStatus.submitted) {
-      return 'Critical (Overdue for Routing)';
-    } else if (hoursOpen > 24 && concern.status == ConcernStatus.submitted) {
-      return 'High (At risk of breaching SLA)';
-    } else if (hoursOpen > 72 && concern.status != ConcernStatus.resolved) {
-      return 'High (Stagnant ticket)';
+    if (hoursOpen > 48 && (concern.status == ConcernStatus.submitted || concern.status == ConcernStatus.routed)) {
+      return 'Critical (SLA Breach)';
+    } else if (hoursOpen > 24) {
+      return 'High (At Risk)';
     }
 
-    return 'Low (Within timeframe)';
+    return 'Low (Normal)';
   }
 
   /// Simple Chatbot logic for student support
   String getChatbotResponse(String message) {
     final text = message.toLowerCase();
     
-    if (text.contains('status') || text.contains('track')) {
-      return "You can track your concern in the 'My Tracked Concerns' section. Most concerns are processed within 2-3 business days.";
-    } else if (text.contains('hello') || text.contains('hi')) {
-      return "Hello! I am ConcernTrack AI. How can I help you with your academic or campus concerns today?";
-    } else if (text.contains('how long')) {
-      return "Our standard processing time (SLA) is 48 hours for initial response and 5 days for resolution.";
-    } else if (text.contains('dean\'s lister') || text.contains('dl')) {
-      return "To check your Dean's Lister status, please submit an Academic concern. The Dean's Office will verify your grades and requirements.";
+    if (text.contains('id')) {
+      return "Para sa ID concerns (Lost/Replacement), mangyaring pumunta sa Student Affairs (OSA) sa Ground Floor. Maghanda ng Affidavit of Loss kung nawala ang ID.";
+    } else if (text.contains('bayad') || text.contains('tuition')) {
+      return "Ang lahat ng tungkol sa tuition at payments ay pinoproseso sa Finance Office. Maaari niyo ring i-check ang inyong balance sa official student portal.";
+    } else if (text.contains('grade') || text.contains('equivalent')) {
+      return "Para sa grade discrepancies o evaluation ng equivalents, mangyaring makipag-ugnayan sa Dean's Office ng inyong departamento.";
     }
     
-    return "I've noted your message. A staff member will also review this and get back to you shortly.";
+    return "I've noted your message. A staff member will review your concern and get back to you shortly.";
   }
 }
